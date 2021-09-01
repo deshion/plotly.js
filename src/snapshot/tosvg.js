@@ -1,100 +1,77 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
-var Plotly = require('../plotly');
-var d3 = require('d3');
+var d3 = require('@plotly/d3');
+
+var Lib = require('../lib');
+var Drawing = require('../components/drawing');
+var Color = require('../components/color');
 
 var xmlnsNamespaces = require('../constants/xmlns_namespaces');
+var DOUBLEQUOTE_REGEX = /"/g;
+var DUMMY_SUB = 'TOBESTRIPPED';
+var DUMMY_REGEX = new RegExp('("' + DUMMY_SUB + ')|(' + DUMMY_SUB + '")', 'g');
 
+function htmlEntityDecode(s) {
+    var hiddenDiv = d3.select('body').append('div').style({display: 'none'}).html('');
+    var replaced = s.replace(/(&[^;]*;)/gi, function(d) {
+        if(d === '&lt;') { return '&#60;'; } // special handling for brackets
+        if(d === '&rt;') { return '&#62;'; }
+        if(d.indexOf('<') !== -1 || d.indexOf('>') !== -1) { return ''; }
+        return hiddenDiv.html(d).text(); // everything else, let the browser decode it to unicode
+    });
+    hiddenDiv.remove();
+    return replaced;
+}
 
-module.exports = function toSVG(gd, format) {
+function xmlEntityEncode(str) {
+    return str.replace(/&(?!\w+;|\#[0-9]+;| \#x[0-9A-F]+;)/g, '&amp;');
+}
+
+module.exports = function toSVG(gd, format, scale) {
+    var fullLayout = gd._fullLayout;
+    var svg = fullLayout._paper;
+    var toppaper = fullLayout._toppaper;
+    var width = fullLayout.width;
+    var height = fullLayout.height;
+    var i, k;
 
     // make background color a rect in the svg, then revert after scraping
     // all other alterations have been dealt with by properly preparing the svg
     // in the first place... like setting cursors with css classes so we don't
     // have to remove them, and providing the right namespaces in the svg to
     // begin with
-    var fullLayout = gd._fullLayout,
-        svg = fullLayout._paper,
-        size = fullLayout._size,
-        domain,
-        i;
-
     svg.insert('rect', ':first-child')
-        .call(Plotly.Drawing.setRect, 0, 0, fullLayout.width, fullLayout.height)
-        .call(Plotly.Color.fill, fullLayout.paper_bgcolor);
+        .call(Drawing.setRect, 0, 0, width, height)
+        .call(Color.fill, fullLayout.paper_bgcolor);
 
-    /* Grab the 3d scenes and rasterize em. Calculate their positions,
-     * then insert them into the SVG element as images */
-    var sceneIds = Plotly.Plots.getSubplotIds(fullLayout, 'gl3d'),
-        scene;
+    // subplot-specific to-SVG methods
+    // which notably add the contents of the gl-container
+    // into the main svg node
+    var basePlotModules = fullLayout._basePlotModules || [];
+    for(i = 0; i < basePlotModules.length; i++) {
+        var _module = basePlotModules[i];
 
-    for(i = 0; i < sceneIds.length; i++) {
-        scene = fullLayout[sceneIds[i]];
-        domain = scene.domain;
-        insertGlImage(fullLayout, scene._scene, {
-            x: size.l + size.w * domain.x[0],
-            y: size.t + size.h * (1 - domain.y[1]),
-            width: size.w * (domain.x[1] - domain.x[0]),
-            height: size.h * (domain.y[1] - domain.y[0])
-        });
+        if(_module.toSVG) _module.toSVG(gd);
     }
 
-    // similarly for 2d scenes
-    var subplotIds = Plotly.Plots.getSubplotIds(fullLayout, 'gl2d'),
-        subplot;
+    // add top items above them assumes everything in toppaper is either
+    // a group or a defs, and if it's empty (like hoverlayer) we can ignore it.
+    if(toppaper) {
+        var nodes = toppaper.node().childNodes;
 
-    for(i = 0; i < subplotIds.length; i++) {
-        subplot = fullLayout._plots[subplotIds[i]];
-        insertGlImage(fullLayout, subplot._scene2d, {
-            x: size.l,
-            y: size.t,
-            width: size.w,
-            height: size.h
-        });
-    }
+        // make copy of nodes as childNodes prop gets mutated in loop below
+        var topGroups = Array.prototype.slice.call(nodes);
 
-    // Grab the geos off the geo-container and place them in geoimages
-    var geoIds = Plotly.Plots.getSubplotIds(fullLayout, 'geo'),
-        geoLayout,
-        geoFramework;
-
-    for(i = 0; i < geoIds.length; i++) {
-        geoLayout = fullLayout[geoIds[i]];
-        domain = geoLayout.domain;
-        geoFramework = geoLayout._geo.framework;
-
-        geoFramework.attr('style', null);
-        geoFramework
-            .attr({
-                x: size.l + size.w * domain.x[0] + geoLayout._marginX,
-                y: size.t + size.h * (1 - domain.y[1]) + geoLayout._marginY,
-                width: geoLayout._width,
-                height: geoLayout._height
-            });
-
-        fullLayout._geoimages.node()
-            .appendChild(geoFramework.node());
-    }
-
-    // now that we've got the 3d images in the right layer, add top items above them
-    // assumes everything in toppaper is a group, and if it's empty (like hoverlayer)
-    // we can ignore it
-    if(fullLayout._toppaper) {
-        var topGroups = fullLayout._toppaper.node().childNodes,
-            topGroup;
         for(i = 0; i < topGroups.length; i++) {
-            topGroup = topGroups[i];
+            var topGroup = topGroups[i];
+
             if(topGroup.childNodes.length) svg.node().appendChild(topGroup);
         }
+    }
+
+    // remove draglayer for Adobe Illustrator compatibility
+    if(fullLayout._draggers) {
+        fullLayout._draggers.remove();
     }
 
     // in case the svg element had an explicit background color, remove this
@@ -103,35 +80,58 @@ module.exports = function toSVG(gd, format) {
     svg.node().style.background = '';
 
     svg.selectAll('text')
-        .attr({'data-unformatted': null})
+        .attr({'data-unformatted': null, 'data-math': null})
         .each(function() {
-            // hidden text is pre-formatting mathjax, the browser ignores it but it can still confuse batik
             var txt = d3.select(this);
-            if(txt.style('visibility') === 'hidden') {
+
+            // hidden text is pre-formatting mathjax, the browser ignores it
+            // but in a static plot it's useless and it can confuse batik
+            // we've tried to standardize on display:none but make sure we still
+            // catch visibility:hidden if it ever arises
+            if(this.style.visibility === 'hidden' || this.style.display === 'none') {
                 txt.remove();
                 return;
+            } else {
+                // clear other visibility/display values to default
+                // to not potentially confuse non-browser SVG implementations
+                txt.style({visibility: null, display: null});
             }
 
-            // I've seen font-family styles with non-escaped double quotes in them - breaks the
-            // serialized svg because the style attribute itself is double-quoted!
-            // Is this an IE thing? Any other attributes or style elements that can have quotes in them?
-            // TODO: this looks like a noop right now - what happened to it?
-
-            /*
-             * Font-family styles with double quotes in them breaks the to-image
-             * step in FF42 because the style attribute itself is wrapped in
-             * double quotes. See:
-             *
-             * - http://codepen.io/etpinard/pen/bEdQWK
-             * - https://github.com/plotly/plotly.js/pull/104
-             *
-             * for more info.
-             */
-            var ff = txt.style('font-family');
+            // Font family styles break things because of quotation marks,
+            // so we must remove them *after* the SVG DOM has been serialized
+            // to a string (browsers convert singles back)
+            var ff = this.style.fontFamily;
             if(ff && ff.indexOf('"') !== -1) {
-                txt.style('font-family', ff.replace(/"/g, '\\\''));
+                txt.style('font-family', ff.replace(DOUBLEQUOTE_REGEX, DUMMY_SUB));
             }
         });
+
+    var queryParts = [];
+    if(fullLayout._gradientUrlQueryParts) {
+        for(k in fullLayout._gradientUrlQueryParts) queryParts.push(k);
+    }
+
+    if(fullLayout._patternUrlQueryParts) {
+        for(k in fullLayout._patternUrlQueryParts) queryParts.push(k);
+    }
+
+    if(queryParts.length) {
+        svg.selectAll(queryParts.join(',')).each(function() {
+            var pt = d3.select(this);
+
+            // similar to font family styles above,
+            // we must remove " after the SVG DOM has been serialized
+            var fill = this.style.fill;
+            if(fill && fill.indexOf('url(') !== -1) {
+                pt.style('fill', fill.replace(DOUBLEQUOTE_REGEX, DUMMY_SUB));
+            }
+
+            var stroke = this.style.stroke;
+            if(stroke && stroke.indexOf('url(') !== -1) {
+                pt.style('stroke', stroke.replace(DOUBLEQUOTE_REGEX, DUMMY_SUB));
+            }
+        });
+    }
 
     if(format === 'pdf' || format === 'eps') {
         // these formats make the extra line MathJax adds around symbols look super thick in some cases
@@ -145,26 +145,39 @@ module.exports = function toSVG(gd, format) {
     svg.node().setAttributeNS(xmlnsNamespaces.xmlns, 'xmlns', xmlnsNamespaces.svg);
     svg.node().setAttributeNS(xmlnsNamespaces.xmlns, 'xmlns:xlink', xmlnsNamespaces.xlink);
 
+    if(format === 'svg' && scale) {
+        svg.attr('width', scale * width);
+        svg.attr('height', scale * height);
+        svg.attr('viewBox', '0 0 ' + width + ' ' + height);
+    }
+
     var s = new window.XMLSerializer().serializeToString(svg.node());
-    s = Plotly.util.html_entity_decode(s);
-    s = Plotly.util.xml_entity_encode(s);
+    s = htmlEntityDecode(s);
+    s = xmlEntityEncode(s);
+
+    // Fix quotations around font strings and gradient URLs
+    s = s.replace(DUMMY_REGEX, '\'');
+
+    // Do we need this process now that IE9 and IE10 are not supported?
+
+    // IE is very strict, so we will need to clean
+    //  svg with the following regex
+    //  yes this is messy, but do not know a better way
+    // Even with this IE will not work due to tainted canvas
+    //  see https://github.com/kangax/fabric.js/issues/1957
+    //      http://stackoverflow.com/questions/18112047/canvas-todataurl-working-in-all-browsers-except-ie10
+    // Leave here just in case the CORS/tainted IE issue gets resolved
+    if(Lib.isIE()) {
+        // replace double quote with single quote
+        s = s.replace(/"/gi, '\'');
+        // url in svg are single quoted
+        //   since we changed double to single
+        //   we'll need to change these to double-quoted
+        s = s.replace(/(\('#)([^']*)('\))/gi, '(\"#$2\")');
+        // font names with spaces will be escaped single-quoted
+        //   we'll need to change these to double-quoted
+        s = s.replace(/(\\')/gi, '\"');
+    }
 
     return s;
 };
-
-function insertGlImage(fullLayout, scene, opts) {
-    var imageData = scene.toImage('png');
-
-    fullLayout._glimages.append('svg:image')
-        .attr({
-            xmlns: xmlnsNamespaces.svg,
-            'xlink:href': imageData,
-            x: opts.x,
-            y: opts.y,
-            width: opts.width,
-            height: opts.height,
-            preserveAspectRatio: 'none'
-        });
-
-    scene.destroy();
-}

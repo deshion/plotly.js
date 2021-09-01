@@ -94,7 +94,9 @@
                     "cmax": 39
                 },
                 "colorbar": {
-                    "title": "WOW"
+                    "title": {
+                        "text": "WOW"
+                    }
                 },
                 "cmin": 0,
                 "cmax": 39
@@ -141,12 +143,13 @@
                 38,
                 39
             ],
-            "type": "bar",
-            "uid": "7fef80"
+            "type": "bar"
         }
     ],
     "layout": {
-        "title": "bar trace with colorscales for both marker color and marker line color",
+        "title": {
+            "text": "bar trace with colorscales for both marker color and marker line color"
+        },
         "xaxis": {
             "type": "linear",
             "range": [

@@ -23,18 +23,16 @@
                     4,
                     2
                 ],
-                "value": 2,
                 "width": 10
             },
             "error_x": {
                 "type": "sqrt",
                 "width": 5
-            },
-            "uid": "10ccaa"
+            }
         }
     ],
     "layout": {
-        "title": "sqrt errorbars",
+        "title": {"text": "sqrt errorbars"},
         "scene": {
             "camera": {
                 "eye": {

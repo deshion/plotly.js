@@ -1,9 +1,6 @@
 {
     "data":[
         {
-            "uid":"5a2c5a",
-            "ysrc":"ben-1:839:d2faa7",
-            "xsrc":"ben-1:839:eb05dd",
             "mode":"markers",
             "y":[
                 "1",
@@ -25,11 +22,6 @@
         "boxmode":"overlay",
         "paper_bgcolor":"#fff",
         "height":790,
-        "titlefont":{
-            "color":"",
-            "family":"",
-            "size":0
-        },
         "hovermode":"x",
         "font":{
             "color":"#444",
@@ -37,7 +29,7 @@
             "size":16
         },
         "autosize":true,
-        "title":"Click to enter Plot title",
+        "title":{"text":"Click to enter Plot title"},
         "plot_bgcolor":"#fff",
         "dragmode":"zoom",
         "width":1530,
@@ -57,7 +49,7 @@
             "autorange":false,
             "zerolinecolor":"#444",
             "tickmode":"auto",
-            "title":"Click to enter X axis title",
+            "title":{"text":"Click to enter X axis title"},
             "ticks":"",
             "showgrid":false,
             "overlaying":false,
@@ -65,11 +57,6 @@
             "type":"linear",
             "zerolinewidth":1,
             "ticklen":5,
-            "titlefont":{
-                "color":"",
-                "family":"",
-                "size":0
-            },
             "tickcolor":"#444",
             "showline":false,
             "tickfont":{
@@ -122,14 +109,14 @@
             },
             {
                 "yanchor":"middle",
-                "text":"Balto <b>Bold</b> <i>Italic</i>",
+                "text":"Roboto <b>Bold</b> <i>Italic</i>",
                 "arrowsize":1,
                 "textangle":0,
                 "borderwidth":1,
                 "ay":-26.0078125,
                 "ax":-10,
                 "font":{
-                    "family":"Balto, sans-serif",
+                    "family":"Roboto, sans-serif",
                     "size":20
                 },
                 "arrowcolor":"",
@@ -176,14 +163,14 @@
             },
             {
                 "yanchor":"middle",
-                "text":"Droid Sans <b>Bold</b>",
+                "text":"Noto Sans <b>Bold</b>",
                 "arrowsize":1,
                 "textangle":0,
                 "borderwidth":1,
                 "ay":-27.0390625,
                 "ax":-10,
                 "font":{
-                    "family":"Droid Sans, sans-serif",
+                    "family":"Noto Sans, sans-serif",
                     "size":20
                 },
                 "arrowcolor":"",
@@ -203,14 +190,14 @@
             },
             {
                 "yanchor":"middle",
-                "text":"Droid Serif <b>Bold</b> <i>Italic</i>",
+                "text":"Noto Serif <b>Bold</b> <i>Italic</i>",
                 "arrowsize":1,
                 "textangle":0,
                 "borderwidth":1,
                 "ay":-27.0390625,
                 "ax":-10,
                 "font":{
-                    "family":"Droid Serif, serif",
+                    "family":"Noto Serif, serif",
                     "size":20
                 },
                 "arrowcolor":"",
@@ -230,14 +217,14 @@
             },
             {
                 "yanchor":"middle",
-                "text":"Droid Sans Mono",
+                "text":"Noto Sans Mono",
                 "arrowsize":1,
                 "textangle":0,
                 "borderwidth":1,
                 "ay":-27.9765625,
                 "ax":-10,
                 "font":{
-                    "family":"Droid Sans Mono, sans-serif",
+                    "family":"Noto Sans Mono, sans-serif",
                     "size":20
                 },
                 "arrowcolor":"",
@@ -437,7 +424,7 @@
             "autorange":false,
             "zerolinecolor":"#444",
             "tickmode":"auto",
-            "title":"Click to enter Y axis title",
+            "title":{"text":"Click to enter Y axis title"},
             "ticks":"",
             "showgrid":false,
             "overlaying":false,
@@ -445,11 +432,6 @@
             "type":"linear",
             "zerolinewidth":1,
             "ticklen":5,
-            "titlefont":{
-                "color":"",
-                "family":"",
-                "size":0
-            },
             "tickcolor":"#444",
             "showline":false,
             "tickfont":{

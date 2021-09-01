@@ -1,56 +1,60 @@
-var fs = require('fs');
+var minimist = require('minimist');
 var path = require('path');
+var spawn = require('child_process').spawn;
 
-var constants = require('../../tasks/util/constants');
-var getOptions = require('../../tasks/util/get_image_request_options');
+var getMockList = require('./assets/get_mock_list');
 
-// packages inside the image server docker
-var ProgressBar = require('progress');
-var request = require('request');
+/**
+ *  Baseline image generation script.
+ *
+ *  CLI arguments:
+ *
+ *  1. 'pattern' : glob determining the baseline(s) to be generated
+ *
+ *  Examples:
+ *
+ *  Generate or (re-generate) all baselines:
+ *
+ *      npm run baseline
+ *
+ *  Generate or (re-generate) the 'contour_nolines' baseline:
+ *
+ *      npm run baseline -- contour_nolines
+ *
+ *  Generate or (re-generate) all gl3d baseline:
+ *
+ *      npm run baseline -- gl3d_*
+ *
+ */
 
-var userFileName = process.argv[2];
-var bar;
+var argv = minimist(process.argv.slice(2), {});
 
+var allMockList = [];
+argv._.forEach(function(pattern) {
+    var mockList = getMockList(pattern);
 
-if (!userFileName) {
-    fs.readdir(constants.pathToTestImageMocks, function(err, files) {
-        console.log('#######  ' + files.length + ' total baseline images to build  #######');
-        bar = new ProgressBar('processing [:bar] [:current / :total]', { total: files.length, width: 30 });
-        if (err) return console.log(err);
-        files.forEach(createBaselineImage);
+    if(mockList.length === 0) {
+        throw new Error('No mocks found with pattern ' + pattern);
+    }
+
+    allMockList = allMockList.concat(mockList);
+});
+
+if(allMockList.length) console.log(allMockList);
+console.log('Please wait for the process to complete.');
+
+var p = spawn(
+    'python3',
+    [
+        path.join('test', 'image', 'make_baseline.py'),
+        '= ' + allMockList.join(' ')
+    ]
+);
+try {
+    p.stdout.on('data', function(data) {
+        console.log(data.toString());
     });
-}
-else {
-    createBaselineImage(userFileName);
-}
-
-
-function createBaselineImage(fileName) {
-    if (path.extname(fileName) !== '.json') return;
-
-    var figure = require(path.join(constants.pathToTestImageMocks, fileName));
-    var bodyMock = {
-        figure: figure,
-        format: 'png',
-        scale: 1
-    };
-
-    var imageFileName = fileName.split('.')[0] + '.png';
-    var savedImagePath = path.join(constants.pathToTestImageBaselines, imageFileName);
-    var savedImageStream = fs.createWriteStream(savedImagePath);
-    var options = getOptions(bodyMock, 'http://localhost:9010/');
-
-    function checkFormat(err, res) {
-        if (err) console.log(err);
-        if (res.headers['content-type'] !== 'image/png') console.log(res.statusCode);
-    }
-
-    function onClose() {
-        if (bar) bar.tick();
-        if (userFileName) console.log('generated : ' + imageFileName + ' successfully');
-    }
-
-    request(options, checkFormat)
-        .pipe(savedImageStream)
-        .on('close', onClose);
+} catch(e) {
+    console.error(e.stack);
+    p.exit(1);
 }

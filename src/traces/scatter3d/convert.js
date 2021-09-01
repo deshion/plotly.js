@@ -1,12 +1,3 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
 var createLinePlot = require('gl-line3d');
@@ -17,10 +8,13 @@ var triangulate = require('delaunay-triangulate');
 
 var Lib = require('../../lib');
 var str2RgbaArray = require('../../lib/str2rgbarray');
-var formatColor = require('../../lib/gl_format_color');
+var formatColor = require('../../lib/gl_format_color').formatColor;
 var makeBubbleSizeFn = require('../scatter/make_bubble_size_func');
 var DASH_PATTERNS = require('../../constants/gl3d_dashes');
-var MARKER_SYMBOLS = require('../../constants/gl_markers');
+var MARKER_SYMBOLS = require('../../constants/gl3d_markers');
+
+var Axes = require('../../plots/cartesian/axes');
+var appendArrayPointValue = require('../../components/fx/helpers').appendArrayPointValue;
 
 var calculateError = require('./calc_errors');
 
@@ -35,8 +29,10 @@ function LineWithMarkers(scene, uid) {
     this.color = null;
     this.mode = '';
     this.dataPoints = [];
-    this.axesBounds = [[-Infinity,-Infinity,-Infinity],
-                       [Infinity,Infinity,Infinity]];
+    this.axesBounds = [
+        [-Infinity, -Infinity, -Infinity],
+        [Infinity, Infinity, Infinity]
+    ];
     this.textLabels = null;
     this.data = null;
 }
@@ -48,7 +44,10 @@ proto.handlePick = function(selection) {
         (selection.object === this.linePlot ||
          selection.object === this.delaunayMesh ||
          selection.object === this.textMarkers ||
-         selection.object === this.scatterPlot)) {
+         selection.object === this.scatterPlot)
+    ) {
+        var ind = selection.index = selection.data.index;
+
         if(selection.object.highlight) {
             selection.object.highlight(null);
         }
@@ -56,16 +55,22 @@ proto.handlePick = function(selection) {
             selection.object = this.scatterPlot;
             this.scatterPlot.highlight(selection.data);
         }
-        if(this.textLabels && this.textLabels[selection.data.index]!==undefined) {
-            selection.textLabel = this.textLabels[selection.data.index];
-        }
-        else selection.textLabel = '';
 
-        var selectIndex = selection.data.index;
+        selection.textLabel = '';
+        if(this.textLabels) {
+            if(Array.isArray(this.textLabels)) {
+                if(this.textLabels[ind] || this.textLabels[ind] === 0) {
+                    selection.textLabel = this.textLabels[ind];
+                }
+            } else {
+                selection.textLabel = this.textLabels;
+            }
+        }
+
         selection.traceCoordinate = [
-            this.data.x[selectIndex],
-            this.data.y[selectIndex],
-            this.data.z[selectIndex]
+            this.data.x[ind],
+            this.data.y[ind],
+            this.data.z[ind]
         ];
 
         return true;
@@ -73,13 +78,13 @@ proto.handlePick = function(selection) {
 };
 
 function constructDelaunay(points, color, axis) {
-    var u = (axis+1)%3;
-    var v = (axis+2)%3;
+    var u = (axis + 1) % 3;
+    var v = (axis + 2) % 3;
     var filteredPoints = [];
     var filteredIds = [];
     var i;
 
-    for(i=0; i<points.length; ++i) {
+    for(i = 0; i < points.length; ++i) {
         var p = points[i];
         if(isNaN(p[u]) || !isFinite(p[u]) ||
            isNaN(p[v]) || !isFinite(p[v])) {
@@ -89,47 +94,79 @@ function constructDelaunay(points, color, axis) {
         filteredIds.push(i);
     }
     var cells = triangulate(filteredPoints);
-    for(i=0; i<cells.length; ++i) {
+    for(i = 0; i < cells.length; ++i) {
         var c = cells[i];
-        for(var j=0; j<c.length; ++j) {
+        for(var j = 0; j < c.length; ++j) {
             c[j] = filteredIds[c[j]];
         }
     }
     return {
-        positions:  points,
-        cells:      cells,
-        meshColor:  color
+        positions: points,
+        cells: cells,
+        meshColor: color
     };
 }
 
 function calculateErrorParams(errors) {
-    var capSize = [0.0, 0.0, 0.0],
-        color = [[0,0,0], [0,0,0], [0,0,0]],
-        lineWidth = [0.0, 0.0, 0.0];
+    var capSize = [0.0, 0.0, 0.0];
+    var color = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    var lineWidth = [1.0, 1.0, 1.0];
 
     for(var i = 0; i < 3; i++) {
         var e = errors[i];
 
-        if(e && e.copy_zstyle !== false) e = errors[2];
-        if(!e) continue;
+        if(e && e.copy_zstyle !== false && errors[2].visible !== false) e = errors[2];
+        if(!e || !e.visible) continue;
 
         capSize[i] = e.width / 2;  // ballpark rescaling
         color[i] = str2RgbaArray(e.color);
-        lineWidth = e.thickness;
-
+        lineWidth[i] = e.thickness;
     }
 
     return {capSize: capSize, color: color, lineWidth: lineWidth};
 }
 
+function parseAlignmentX(a) {
+    if(a === null || a === undefined) return 0;
+
+    return (a.indexOf('left') > -1) ? -1 :
+           (a.indexOf('right') > -1) ? 1 : 0;
+}
+
+function parseAlignmentY(a) {
+    if(a === null || a === undefined) return 0;
+
+    return (a.indexOf('top') > -1) ? -1 :
+           (a.indexOf('bottom') > -1) ? 1 : 0;
+}
+
 function calculateTextOffset(tp) {
-    //Read out text properties
-    var textOffset = [0, 0];
-    if(Array.isArray(tp)) return [0, -1];
-    if(tp.indexOf('bottom') >= 0) textOffset[1] += 1;
-    if(tp.indexOf('top') >= 0) textOffset[1] -= 1;
-    if(tp.indexOf('left') >= 0) textOffset[0] -= 1;
-    if(tp.indexOf('right') >= 0) textOffset[0] += 1;
+    // Read out text properties
+
+    var defaultAlignmentX = 0;
+    var defaultAlignmentY = 0;
+
+    var textOffset = [
+        defaultAlignmentX,
+        defaultAlignmentY
+    ];
+
+    if(Array.isArray(tp)) {
+        for(var i = 0; i < tp.length; i++) {
+            textOffset[i] = [
+                defaultAlignmentX,
+                defaultAlignmentY
+            ];
+            if(tp[i]) {
+                textOffset[i][0] = parseAlignmentX(tp[i]);
+                textOffset[i][1] = parseAlignmentY(tp[i]);
+            }
+        }
+    } else {
+        textOffset[0] = parseAlignmentX(tp);
+        textOffset[1] = parseAlignmentY(tp);
+    }
+
     return textOffset;
 }
 
@@ -146,43 +183,45 @@ function calculateSymbol(symbolIn) {
 function formatParam(paramIn, len, calculate, dflt, extraFn) {
     var paramOut = null;
 
-    if(Array.isArray(paramIn)) {
+    if(Lib.isArrayOrTypedArray(paramIn)) {
         paramOut = [];
 
         for(var i = 0; i < len; i++) {
-            if(paramIn[i]===undefined) paramOut[i] = dflt;
+            if(paramIn[i] === undefined) paramOut[i] = dflt;
             else paramOut[i] = calculate(paramIn[i], extraFn);
         }
-
-    }
-    else paramOut = calculate(paramIn, Lib.identity);
+    } else paramOut = calculate(paramIn, Lib.identity);
 
     return paramOut;
 }
 
 
 function convertPlotlyOptions(scene, data) {
-    var params, i,
-        points = [],
-        sceneLayout = scene.fullSceneLayout,
-        scaleFactor = scene.dataScale,
-        xaxis = sceneLayout.xaxis,
-        yaxis = sceneLayout.yaxis,
-        zaxis = sceneLayout.zaxis,
-        marker = data.marker,
-        line = data.line,
-        xc, x = data.x || [],
-        yc, y = data.y || [],
-        zc, z = data.z || [],
-        len = x.length,
-        text;
+    var points = [];
+    var sceneLayout = scene.fullSceneLayout;
+    var scaleFactor = scene.dataScale;
+    var xaxis = sceneLayout.xaxis;
+    var yaxis = sceneLayout.yaxis;
+    var zaxis = sceneLayout.zaxis;
+    var marker = data.marker;
+    var line = data.line;
+    var x = data.x || [];
+    var y = data.y || [];
+    var z = data.z || [];
+    var len = x.length;
+    var xcalendar = data.xcalendar;
+    var ycalendar = data.ycalendar;
+    var zcalendar = data.zcalendar;
+    var xc, yc, zc;
+    var params, i;
+    var text;
 
-    //Convert points
-    for (i = 0; i < len; i++) {
+    // Convert points
+    for(i = 0; i < len; i++) {
         // sanitize numbers and apply transforms based on axes.type
-        xc = xaxis.d2l(x[i]) * scaleFactor[0];
-        yc = yaxis.d2l(y[i]) * scaleFactor[1];
-        zc = zaxis.d2l(z[i]) * scaleFactor[2];
+        xc = xaxis.d2l(x[i], 0, xcalendar) * scaleFactor[0];
+        yc = yaxis.d2l(y[i], 0, ycalendar) * scaleFactor[1];
+        zc = zaxis.d2l(z[i], 0, zcalendar) * scaleFactor[2];
 
         points[i] = [xc, yc, zc];
     }
@@ -194,20 +233,52 @@ function convertPlotlyOptions(scene, data) {
         for(i = 0; i < len; i++) text[i] = data.text;
     }
 
-    //Build object parameters
+    function formatter(axName, val) {
+        var ax = sceneLayout[axName];
+        return Axes.tickText(ax, ax.d2l(val), true).text;
+    }
+
+    // check texttemplate
+    var texttemplate = data.texttemplate;
+    if(texttemplate) {
+        var fullLayout = scene.fullLayout;
+        var d3locale = fullLayout._d3locale;
+        var isArray = Array.isArray(texttemplate);
+        var N = isArray ? Math.min(texttemplate.length, len) : len;
+        var txt = isArray ?
+            function(i) { return texttemplate[i]; } :
+            function() { return texttemplate; };
+
+        text = new Array(N);
+
+        for(i = 0; i < N; i++) {
+            var d = {x: x[i], y: y[i], z: z[i]};
+            var labels = {
+                xLabel: formatter('xaxis', x[i]),
+                yLabel: formatter('yaxis', y[i]),
+                zLabel: formatter('zaxis', z[i])
+            };
+            var pointValues = {};
+            appendArrayPointValue(pointValues, data, i);
+            var meta = data._meta || {};
+            text[i] = Lib.texttemplateString(txt(i), labels, d3locale, pointValues, d, meta);
+        }
+    }
+
+    // Build object parameters
     params = {
         position: points,
-        mode:     data.mode,
-        text:     text
+        mode: data.mode,
+        text: text
     };
 
-    if ('line' in data) {
-        params.lineColor = str2RgbaArray(line.color);
+    if('line' in data) {
+        params.lineColor = formatColor(line, 1, len);
         params.lineWidth = line.width;
         params.lineDashes = line.dash;
     }
 
-    if ('marker' in data) {
+    if('marker' in data) {
         var sizeFn = makeBubbleSizeFn(data);
 
         params.scatterColor = formatColor(marker, 1, len);
@@ -218,8 +289,8 @@ function convertPlotlyOptions(scene, data) {
         params.scatterAngle = 0;
     }
 
-    if ('textposition' in data) {
-        params.textOffset = calculateTextOffset(data.textposition);  // arrayOk === false
+    if('textposition' in data) {
+        params.textOffset = calculateTextOffset(data.textposition);
         params.textColor = formatColor(data.textfont, 1, len);
         params.textSize = formatParam(data.textfont.size, len, Lib.identity, 12);
         params.textFont = data.textfont.family;  // arrayOk === false
@@ -228,17 +299,17 @@ function convertPlotlyOptions(scene, data) {
 
     var dims = ['x', 'y', 'z'];
     params.project = [false, false, false];
-    params.projectScale = [1,1,1];
-    params.projectOpacity = [1,1,1];
-    for (i = 0; i < 3; ++i) {
+    params.projectScale = [1, 1, 1];
+    params.projectOpacity = [1, 1, 1];
+    for(i = 0; i < 3; ++i) {
         var projection = data.projection[dims[i]];
-        if ((params.project[i] = projection.show)) {
+        if((params.project[i] = projection.show)) {
             params.projectOpacity[i] = projection.opacity;
             params.projectScale[i] = projection.scale;
         }
     }
 
-    params.errorBounds = calculateError(data, scaleFactor);
+    params.errorBounds = calculateError(data, scaleFactor, sceneLayout);
 
     var errorParams = calculateErrorParams([data.error_x, data.error_y, data.error_z]);
     params.errorColor = errorParams.color;
@@ -251,32 +322,44 @@ function convertPlotlyOptions(scene, data) {
     return params;
 }
 
-function arrayToColor(color) {
-    if(Array.isArray(color)) {
+function _arrayToColor(color) {
+    if(Lib.isArrayOrTypedArray(color)) {
         var c = color[0];
 
-        if(Array.isArray(c)) color = c;
+        if(Lib.isArrayOrTypedArray(c)) color = c;
 
-        return 'rgb(' + color.slice(0,3).map(function(x) {
-            return Math.round(x*255);
+        return 'rgb(' + color.slice(0, 3).map(function(x) {
+            return Math.round(x * 255);
         }) + ')';
     }
 
     return null;
 }
 
-proto.update = function(data) {
-    var gl = this.scene.glplot.gl,
-        lineOptions,
-        scatterOptions,
-        errorOptions,
-        textOptions,
-        dashPattern = DASH_PATTERNS.solid;
+function arrayToColor(colors) {
+    if(!Lib.isArrayOrTypedArray(colors)) {
+        return null;
+    }
 
-    //Save data
+    if((colors.length === 4) && (typeof colors[0] === 'number')) {
+        return _arrayToColor(colors);
+    }
+
+    return colors.map(_arrayToColor);
+}
+
+proto.update = function(data) {
+    var gl = this.scene.glplot.gl;
+    var lineOptions;
+    var scatterOptions;
+    var errorOptions;
+    var textOptions;
+    var dashPattern = DASH_PATTERNS.solid;
+
+    // Save data
     this.data = data;
 
-    //Run data conversion
+    // Run data conversion
     var options = convertPlotlyOptions(this.scene, data);
 
     if('mode' in options) {
@@ -291,26 +374,28 @@ proto.update = function(data) {
     this.color = arrayToColor(options.scatterColor) ||
                  arrayToColor(options.lineColor);
 
-    //Save data points
+    // Save data points
     this.dataPoints = options.position;
 
     lineOptions = {
-        gl:         gl,
-        position:   options.position,
-        color:      options.lineColor,
-        lineWidth:  options.lineWidth || 1,
-        dashes:     dashPattern[0],
-        dashScale:  dashPattern[1],
-        opacity:    data.opacity
+        gl: this.scene.glplot.gl,
+        position: options.position,
+        color: options.lineColor,
+        lineWidth: options.lineWidth || 1,
+        dashes: dashPattern[0],
+        dashScale: dashPattern[1],
+        opacity: data.opacity,
+        connectGaps: data.connectgaps
     };
 
-    if (this.mode.indexOf('lines') !== -1) {
-        if (this.linePlot) this.linePlot.update(lineOptions);
+    if(this.mode.indexOf('lines') !== -1) {
+        if(this.linePlot) this.linePlot.update(lineOptions);
         else {
             this.linePlot = createLinePlot(lineOptions);
+            this.linePlot._trace = this;
             this.scene.glplot.add(this.linePlot);
         }
-    } else if (this.linePlot) {
+    } else if(this.linePlot) {
         this.scene.glplot.remove(this.linePlot);
         this.linePlot.dispose();
         this.linePlot = null;
@@ -321,24 +406,25 @@ proto.update = function(data) {
     if(data.marker && data.marker.opacity) scatterOpacity *= data.marker.opacity;
 
     scatterOptions = {
-        gl:           gl,
-        position:     options.position,
-        color:        options.scatterColor,
-        size:         options.scatterSize,
-        glyph:        options.scatterMarker,
-        opacity:      scatterOpacity,
+        gl: this.scene.glplot.gl,
+        position: options.position,
+        color: options.scatterColor,
+        size: options.scatterSize,
+        glyph: options.scatterMarker,
+        opacity: scatterOpacity,
         orthographic: true,
-        lineWidth:    options.scatterLineWidth,
-        lineColor:    options.scatterLineColor,
-        project:      options.project,
+        lineWidth: options.scatterLineWidth,
+        lineColor: options.scatterLineColor,
+        project: options.project,
         projectScale: options.projectScale,
         projectOpacity: options.projectOpacity
     };
 
     if(this.mode.indexOf('markers') !== -1) {
-        if (this.scatterPlot) this.scatterPlot.update(scatterOptions);
+        if(this.scatterPlot) this.scatterPlot.update(scatterOptions);
         else {
             this.scatterPlot = createScatterPlot(scatterOptions);
+            this.scatterPlot._trace = this;
             this.scatterPlot.highlightScale = 1;
             this.scene.glplot.add(this.scatterPlot);
         }
@@ -349,43 +435,44 @@ proto.update = function(data) {
     }
 
     textOptions = {
-        gl:           gl,
-        position:     options.position,
-        glyph:        options.text,
-        color:        options.textColor,
-        size:         options.textSize,
-        angle:        options.textAngle,
-        alignment:    options.textOffset,
-        font:         options.textFont,
+        gl: this.scene.glplot.gl,
+        position: options.position,
+        glyph: options.text,
+        color: options.textColor,
+        size: options.textSize,
+        angle: options.textAngle,
+        alignment: options.textOffset,
+        font: options.textFont,
         orthographic: true,
-        lineWidth:    0,
-        project:      false,
-        opacity:      data.opacity
+        lineWidth: 0,
+        project: false,
+        opacity: data.opacity
     };
 
-    this.textLabels = options.text;
+    this.textLabels = data.hovertext || data.text;
 
     if(this.mode.indexOf('text') !== -1) {
-        if (this.textMarkers) this.textMarkers.update(textOptions);
+        if(this.textMarkers) this.textMarkers.update(textOptions);
         else {
             this.textMarkers = createScatterPlot(textOptions);
+            this.textMarkers._trace = this;
             this.textMarkers.highlightScale = 1;
             this.scene.glplot.add(this.textMarkers);
         }
-    } else if (this.textMarkers) {
+    } else if(this.textMarkers) {
         this.scene.glplot.remove(this.textMarkers);
         this.textMarkers.dispose();
         this.textMarkers = null;
     }
 
     errorOptions = {
-        gl:           gl,
-        position:     options.position,
-        color:        options.errorColor,
-        error:        options.errorBounds,
-        lineWidth:    options.errorLineWidth,
-        capSize:      options.errorCapSize,
-        opacity:      data.opacity
+        gl: this.scene.glplot.gl,
+        position: options.position,
+        color: options.errorColor,
+        error: options.errorBounds,
+        lineWidth: options.errorLineWidth,
+        capSize: options.errorCapSize,
+        opacity: data.opacity
     };
     if(this.errorBars) {
         if(options.errorBounds) {
@@ -397,6 +484,7 @@ proto.update = function(data) {
         }
     } else if(options.errorBounds) {
         this.errorBars = createErrorBars(errorOptions);
+        this.errorBars._trace = this;
         this.scene.glplot.add(this.errorBars);
     }
 
@@ -404,12 +492,16 @@ proto.update = function(data) {
         var delaunayOptions = constructDelaunay(
             options.position,
             options.delaunayColor,
-            options.delaunayAxis);
+            options.delaunayAxis
+        );
+        delaunayOptions.opacity = data.opacity;
+
         if(this.delaunayMesh) {
             this.delaunayMesh.update(delaunayOptions);
         } else {
             delaunayOptions.gl = gl;
             this.delaunayMesh = createMesh(delaunayOptions);
+            this.delaunayMesh._trace = this;
             this.scene.glplot.add(this.delaunayMesh);
         }
     } else if(this.delaunayMesh) {
@@ -429,7 +521,7 @@ proto.dispose = function() {
         this.scatterPlot.dispose();
     }
     if(this.errorBars) {
-        this.scene.remove(this.errorBars);
+        this.scene.glplot.remove(this.errorBars);
         this.errorBars.dispose();
     }
     if(this.textMarkers) {
@@ -437,7 +529,7 @@ proto.dispose = function() {
         this.textMarkers.dispose();
     }
     if(this.delaunayMesh) {
-        this.scene.glplot.remove(this.textMarkers);
+        this.scene.glplot.remove(this.delaunayMesh);
         this.delaunayMesh.dispose();
     }
 };

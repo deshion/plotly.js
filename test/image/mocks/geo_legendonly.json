@@ -34,8 +34,7 @@
             "textfont": {
                 "size": 20
             },
-            "textposition": "top right",
-            "uid": "27d635"
+            "textposition": "top right"
         },
         {
             "type": "scattergeo",
@@ -55,8 +54,7 @@
                 "color": "green",
                 "width": 5,
                 "dash": "dot"
-            },
-            "uid": "bda980"
+            }
         },
         {
             "type": "scattergeo",
@@ -81,12 +79,11 @@
                 "color": "red",
                 "width": 3,
                 "dash": "longdashdot"
-            },
-            "uid": "9175b9"
+            }
         }
     ],
     "layout": {
-        "title": "Click on the legend item to show the 3<sup>rd</sup> trace",
+        "title": {"text": "Click on the legend item to show the 3<sup>rd</sup> trace"},
         "geo": {
             "projection": {
                 "type": "robinson"

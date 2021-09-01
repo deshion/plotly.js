@@ -2,6 +2,10 @@
     "data": [
         {
             "type": "bar",
+            "textfont": {
+                "size": 24
+            },
+            "texttemplate": "%{y}",
             "y": [
                 1,
                 2,
@@ -50,7 +54,9 @@
         }
     ],
     "layout": {
-        "title": "bars + colorbar = <3",
+        "title": {
+            "text": "bars + colorbar = <3"
+        },
         "xaxis": {
             "type": "linear",
             "range": [

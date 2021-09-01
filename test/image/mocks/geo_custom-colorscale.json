@@ -16,11 +16,15 @@
                 60,
                 40
             ],
+            "colorbar": {
+                "ticks": "inside",
+                "ticklen": 16,
+                "ticklabelposition": "inside bottom"
+            },
             "colorscale": "Greens",
             "reversescale": true,
             "zmin": 0,
-            "zmax": 100,
-            "uid": "3e8d2d"
+            "zmax": 100
         }
     ],
     "layout": {

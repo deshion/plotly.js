@@ -1,291 +1,119 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
-var d3 = require('d3');
+var d3 = require('@plotly/d3');
 
-var Fx = require('../../plots/cartesian/graph_interact');
-var Axes = require('../../plots/cartesian/axes');
-
+var Lib = require('../../lib');
 var getTopojsonFeatures = require('../../lib/topojson_utils').getTopojsonFeatures;
-var locationToFeature = require('../../lib/geo_location_utils').locationToFeature;
-var arrayToCalcItem = require('../../lib/array_to_calc_item');
+var geoJsonUtils = require('../../lib/geojson_utils');
+var geoUtils = require('../../lib/geo_location_utils');
+var findExtremes = require('../../plots/cartesian/autorange').findExtremes;
+var BADNUM = require('../../constants/numerical').BADNUM;
 
-var Color = require('../../components/color');
-var Drawing = require('../../components/drawing');
+var calcMarkerSize = require('../scatter/calc').calcMarkerSize;
 var subTypes = require('../scatter/subtypes');
+var style = require('./style');
 
-var attributes = require('./attributes');
+function plot(gd, geo, calcData) {
+    var scatterLayer = geo.layers.frontplot.select('.scatterlayer');
+    var gTraces = Lib.makeTraceGroups(scatterLayer, calcData, 'trace scattergeo');
 
-var plotScatterGeo = module.exports = {};
-
-
-plotScatterGeo.calcGeoJSON = function(trace, topojson) {
-    var cdi = [],
-        hasLocationData = Array.isArray(trace.locations);
-
-    var len, features, getLonLat, lonlat, locations, calcItem;
-
-    if(hasLocationData) {
-        locations = trace.locations;
-        len = locations.length;
-        features = getTopojsonFeatures(trace, topojson);
-        getLonLat = function(trace, i) {
-            var feature = locationToFeature(trace.locationmode, locations[i], features);
-
-            return (feature !== undefined) ?
-                feature.properties.ct :
-                undefined;
-        };
-    }
-    else {
-        len = trace.lon.length;
-        getLonLat = function(trace, i) {
-            return [trace.lon[i], trace.lat[i]];
-        };
-    }
-
-    for(var i = 0; i < len; i++) {
-        lonlat = getLonLat(trace, i);
-
-        if(!lonlat) continue;  // filter the blank points here
-
-        calcItem = {
-            lon: lonlat[0],
-            lat: lonlat[1],
-            location: hasLocationData ? trace.locations[i] : null
-        };
-
-        arrayItemToCalcdata(trace, calcItem, i);
-
-        cdi.push(calcItem);
-    }
-
-    if(cdi.length > 0) cdi[0].trace = trace;
-
-    return cdi;
-};
-
-// similar Scatter.arraysToCalcdata but inside a filter loop
-function arrayItemToCalcdata(trace, calcItem, i) {
-    var marker = trace.marker;
-
-    function merge(traceAttr, calcAttr) {
-        arrayToCalcItem(traceAttr, calcItem, calcAttr, i);
-    }
-
-    merge(trace.text, 'tx');
-    merge(trace.textposition, 'tp');
-    if(trace.textfont) {
-        merge(trace.textfont.size, 'ts');
-        merge(trace.textfont.color, 'tc');
-        merge(trace.textfont.family, 'tf');
-    }
-
-    if(marker && marker.line) {
-        var markerLine = marker.line;
-        merge(marker.opacity, 'mo');
-        merge(marker.symbol, 'mx');
-        merge(marker.color, 'mc');
-        merge(marker.size, 'ms');
-        merge(markerLine.color, 'mlc');
-        merge(markerLine.width, 'mlw');
-    }
-}
-
-function makeLineGeoJSON(trace) {
-    var N = trace.lon.length,
-        coordinates = new Array(N);
-
-    for (var i = 0; i < N; i++) {
-        coordinates[i] = [trace.lon[i], trace.lat[i]];
-    }
-
-    return {
-        type: 'LineString',
-        coordinates: coordinates,
-        trace: trace
-    };
-}
-
-plotScatterGeo.plot = function(geo, scattergeoData) {
-    var gScatterGeoTraces = geo.framework.select('.scattergeolayer')
-        .selectAll('g.trace.scattergeo')
-        .data(scattergeoData);
-
-    gScatterGeoTraces.enter().append('g')
-        .attr('class', 'trace scattergeo');
-
-    gScatterGeoTraces.exit().remove();
-
-    // TODO add hover - how?
-    gScatterGeoTraces
-        .each(function(trace) {
-            if(!subTypes.hasLines(trace) || trace.visible !== true) return;
-            d3.select(this)
-                .append('path')
-                .datum(makeLineGeoJSON(trace))
-                .attr('class', 'js-line');
-        });
-
-    gScatterGeoTraces.append('g')
-        .attr('class', 'points')
-        .each(function(trace) {
-            var s = d3.select(this),
-                showMarkers = subTypes.hasMarkers(trace),
-                showText = subTypes.hasText(trace);
-
-            if((!showMarkers && !showText) || trace.visible !== true) {
-                s.remove();
-                return;
-            }
-
-            var cdi = plotScatterGeo.calcGeoJSON(trace, geo.topojson),
-                cleanHoverLabelsFunc = makeCleanHoverLabelsFunc(geo, trace),
-                eventDataFunc = makeEventDataFunc(trace);
-
-            var hoverinfo = trace.hoverinfo,
-                hasNameLabel = (
-                    hoverinfo === 'all' ||
-                    hoverinfo.indexOf('name') !== -1
-                );
-
-            function handleMouseOver(pt, ptIndex) {
-                if(!geo.showHover) return;
-
-                var xy = geo.projection([pt.lon, pt.lat]);
-                cleanHoverLabelsFunc(pt);
-
-                Fx.loneHover({
-                    x: xy[0],
-                    y: xy[1],
-                    name: hasNameLabel ? trace.name : undefined,
-                    text: pt.textLabel,
-                    color: pt.mc || (trace.marker || {}).color
-                }, {
-                    container: geo.hoverContainer.node()
-                });
-
-                geo.graphDiv.emit('plotly_hover', eventDataFunc(pt, ptIndex));
-            }
-
-            function handleClick(pt, ptIndex) {
-                geo.graphDiv.emit('plotly_click', eventDataFunc(pt, ptIndex));
-            }
-
-            if(showMarkers) {
-                s.selectAll('path.point')
-                    .data(cdi)
-                    .enter().append('path')
-                        .attr('class', 'point')
-                        .on('mouseover', handleMouseOver)
-                        .on('click', handleClick)
-                        .on('mouseout', function() {
-                            Fx.loneUnhover(geo.hoverContainer);
-                        })
-                        .on('mousedown', function() {
-                            // to simulate the 'zoomon' event
-                            Fx.loneUnhover(geo.hoverContainer);
-                        })
-                        .on('mouseup', handleMouseOver);  // ~ 'zoomend'
-            }
-
-            if(showText) {
-                s.selectAll('g')
-                    .data(cdi)
-                    .enter().append('g')
-                        .append('text');
-            }
-        });
-
-    plotScatterGeo.style(geo);
-};
-
-plotScatterGeo.style = function(geo) {
-    var selection = geo.framework.selectAll('g.trace.scattergeo');
-
-    selection.style('opacity', function(trace) { return trace.opacity; });
-
-    selection.selectAll('g.points')
-        .each(function(trace){
-            d3.select(this).selectAll('path.point')
-                .call(Drawing.pointStyle, trace);
-            d3.select(this).selectAll('text')
-                .call(Drawing.textPointStyle, trace);
-        });
-
-    // GeoJSON calc data is incompatible with Drawing.lineGroupStyle
-    selection.selectAll('path.js-line')
-        .style('fill', 'none')
-        .each(function(d) {
-            var trace = d.trace,
-                line = trace.line || {};
-
-            d3.select(this)
-                .call(Color.stroke, line.color)
-                .call(Drawing.dashLine, line.dash || '', line.width || 0);
-        });
-};
-
-function makeCleanHoverLabelsFunc(geo, trace) {
-    var hoverinfo = trace.hoverinfo;
-
-    if(hoverinfo === 'none') {
-        return function cleanHoverLabelsFunc(d) { delete d.textLabel; };
-    }
-
-    var hoverinfoParts = (hoverinfo === 'all') ?
-            attributes.hoverinfo.flags :
-            hoverinfo.split('+');
-
-    var hasLocation = (
-            hoverinfoParts.indexOf('location') !== -1 &&
-            Array.isArray(trace.locations)
-        ),
-        hasLon = (hoverinfoParts.indexOf('lon') !== -1),
-        hasLat = (hoverinfoParts.indexOf('lat') !== -1),
-        hasText = (hoverinfoParts.indexOf('text') !== -1);
-
-    function formatter(val) {
-        var axis = geo.mockAxis;
-        return Axes.tickText(axis, axis.c2l(val), 'hover').text + '\u00B0';
-    }
-
-    return function cleanHoverLabelsFunc(pt) {
-        var thisText = [];
-
-        if(hasLocation) thisText.push(pt.location);
-        else if(hasLon && hasLat) {
-            thisText.push('(' + formatter(pt.lon) + ', ' + formatter(pt.lat) + ')');
+    function removeBADNUM(d, node) {
+        if(d.lonlat[0] === BADNUM) {
+            d3.select(node).remove();
         }
-        else if(hasLon) thisText.push('lon: ' + formatter(pt.lon));
-        else if(hasLat) thisText.push('lat: ' + formatter(pt.lat));
+    }
 
-        if(hasText) thisText.push(pt.tx || trace.text);
+    // TODO find a way to order the inner nodes on update
+    gTraces.selectAll('*').remove();
 
-        pt.textLabel = thisText.join('<br>');
-    };
+    gTraces.each(function(calcTrace) {
+        var s = d3.select(this);
+        var trace = calcTrace[0].trace;
+
+        if(subTypes.hasLines(trace) || trace.fill !== 'none') {
+            var lineCoords = geoJsonUtils.calcTraceToLineCoords(calcTrace);
+
+            var lineData = (trace.fill !== 'none') ?
+                geoJsonUtils.makePolygon(lineCoords) :
+                geoJsonUtils.makeLine(lineCoords);
+
+            s.selectAll('path.js-line')
+                .data([{geojson: lineData, trace: trace}])
+              .enter().append('path')
+                .classed('js-line', true)
+                .style('stroke-miterlimit', 2);
+        }
+
+        if(subTypes.hasMarkers(trace)) {
+            s.selectAll('path.point')
+                .data(Lib.identity)
+             .enter().append('path')
+                .classed('point', true)
+                .each(function(calcPt) { removeBADNUM(calcPt, this); });
+        }
+
+        if(subTypes.hasText(trace)) {
+            s.selectAll('g')
+                .data(Lib.identity)
+              .enter().append('g')
+                .append('text')
+                .each(function(calcPt) { removeBADNUM(calcPt, this); });
+        }
+
+        // call style here within topojson request callback
+        style(gd, calcTrace);
+    });
 }
 
-function makeEventDataFunc(trace) {
-    var hasLocation = Array.isArray(trace.locations);
+function calcGeoJSON(calcTrace, fullLayout) {
+    var trace = calcTrace[0].trace;
+    var geoLayout = fullLayout[trace.geo];
+    var geo = geoLayout._subplot;
+    var len = trace._length;
+    var i, calcPt;
 
-    return function(pt, ptIndex) {
-        return {points: [{
-            data: trace._input,
-            fullData: trace,
-            curveNumber: trace.index,
-            pointNumber: ptIndex,
-            lon: pt.lon,
-            lat: pt.lat,
-            location: hasLocation ? pt.location : null
-        }]};
-    };
+    if(Array.isArray(trace.locations)) {
+        var locationmode = trace.locationmode;
+        var features = locationmode === 'geojson-id' ?
+            geoUtils.extractTraceFeature(calcTrace) :
+            getTopojsonFeatures(trace, geo.topojson);
+
+        for(i = 0; i < len; i++) {
+            calcPt = calcTrace[i];
+
+            var feature = locationmode === 'geojson-id' ?
+                calcPt.fOut :
+                geoUtils.locationToFeature(locationmode, calcPt.loc, features);
+
+            calcPt.lonlat = feature ? feature.properties.ct : [BADNUM, BADNUM];
+        }
+    }
+
+    var opts = {padded: true};
+    var lonArray;
+    var latArray;
+
+    if(geoLayout.fitbounds === 'geojson' && trace.locationmode === 'geojson-id') {
+        var bboxGeojson = geoUtils.computeBbox(geoUtils.getTraceGeojson(trace));
+        lonArray = [bboxGeojson[0], bboxGeojson[2]];
+        latArray = [bboxGeojson[1], bboxGeojson[3]];
+    } else {
+        lonArray = new Array(len);
+        latArray = new Array(len);
+        for(i = 0; i < len; i++) {
+            calcPt = calcTrace[i];
+            lonArray[i] = calcPt.lonlat[0];
+            latArray[i] = calcPt.lonlat[1];
+        }
+
+        opts.ppad = calcMarkerSize(trace, len);
+    }
+
+    trace._extremes.lon = findExtremes(geoLayout.lonaxis._ax, lonArray, opts);
+    trace._extremes.lat = findExtremes(geoLayout.lataxis._ax, latArray, opts);
 }
+
+module.exports = {
+    calcGeoJSON: calcGeoJSON,
+    plot: plot
+};

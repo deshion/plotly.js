@@ -45,12 +45,11 @@
                     "square",
                     "cross"
                 ]
-            },
-            "uid": "2899cc"
+            }
         }
     ],
     "layout": {
-        "title": "Scatter3d arrayOk",
+        "title": {"text": "Scatter3d arrayOk"},
         "scene": {
             "aspectratio": {
                 "x": 1,

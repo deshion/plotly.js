@@ -1,168 +1,107 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
-var Plotly = require('../../plotly');
-var d3 = require('d3');
+var d3 = require('@plotly/d3');
 var isNumeric = require('fast-isnumeric');
 
-var plots = Plotly.Plots;
+var Plots = require('../../plots/plots');
+var Registry = require('../../registry');
+var Lib = require('../../lib');
+var strTranslate = Lib.strTranslate;
+var Drawing = require('../drawing');
+var Color = require('../color');
+var svgTextUtils = require('../../lib/svg_text_utils');
+var interactConstants = require('../../constants/interactions');
 
-var Titles = module.exports = {};
+var OPPOSITE_SIDE = require('../../constants/alignment').OPPOSITE_SIDE;
+var numStripRE = / [XY][0-9]* /;
 
-// titles - (re)draw titles on the axes and plot
-// title can be 'xtitle', 'ytitle', 'gtitle',
-//  or empty to draw all
-Titles.draw = function(gd, title) {
-    if(!title) {
-        Plotly.Axes.listIds(gd).forEach(function(axId) {
-            Titles.draw(gd, axId + 'title');
-        });
-        Titles.draw(gd, 'gtitle');
-        return;
-    }
+/**
+ * Titles - (re)draw titles on the axes and plot:
+ * @param {DOM element} gd - the graphDiv
+ * @param {string} titleClass - the css class of this title
+ * @param {object} options - how and what to draw
+ *      propContainer - the layout object containing `title` and `titlefont`
+ *          attributes that apply to this title
+ *      propName - the full name of the title property (for Plotly.relayout)
+ *      [traceIndex] - include only if this property applies to one trace
+ *          (such as a colorbar title) - then editing pipes to Plotly.restyle
+ *          instead of Plotly.relayout
+ *      placeholder - placeholder text for an empty editable title
+ *      [avoid] {object} - include if this title should move to avoid other elements
+ *          selection - d3 selection of elements to avoid
+ *          side - which direction to move if there is a conflict
+ *          [offsetLeft] - if these elements are subject to a translation
+ *              wrt the title element
+ *          [offsetTop]
+ *      attributes {object} - position and alignment attributes
+ *          x - pixels
+ *          y - pixels
+ *          text-anchor - start|middle|end
+ *      transform {object} - how to transform the title after positioning
+ *          rotate - degrees
+ *          offset - shift up/down in the rotated frame (unused?)
+ *      containerGroup - if an svg <g> element already exists to hold this
+ *          title, include here. Otherwise it will go in fullLayout._infolayer
+ *      _meta {object (optional} - meta key-value to for title with
+ *          Lib.templateString, default to fullLayout._meta, if not provided
+ *
+ *  @return {selection} d3 selection of title container group
+ */
+function draw(gd, titleClass, options) {
+    var cont = options.propContainer;
+    var prop = options.propName;
+    var placeholder = options.placeholder;
+    var traceIndex = options.traceIndex;
+    var avoid = options.avoid || {};
+    var attributes = options.attributes;
+    var transform = options.transform;
+    var group = options.containerGroup;
 
-    var fullLayout = gd._fullLayout,
-        gs = fullLayout._size,
-        axletter = title.charAt(0),
-        colorbar = title.substr(1,2)==='cb';
+    var fullLayout = gd._fullLayout;
 
-    var cbnum, cont, options;
+    var opacity = 1;
+    var isplaceholder = false;
+    var title = cont.title;
+    var txt = (title && title.text ? title.text : '').trim();
 
-    if(colorbar) {
-        var uid = title.substr(3).replace('title','');
-        gd._fullData.some(function(trace, i) {
-            if(trace.uid===uid) {
-                cbnum = i;
-                cont = gd.calcdata[i][0].t.cb.axis;
-                return true;
-            }
-        });
-    }
-    else cont = fullLayout[Plotly.Axes.id2name(title.replace('title',''))] || fullLayout;
+    var font = title && title.font ? title.font : {};
+    var fontFamily = font.family;
+    var fontSize = font.size;
+    var fontColor = font.color;
 
-    var prop = cont===fullLayout ? 'title' : cont._name+'.title',
-        name = colorbar ? 'colorscale' :
-            ((cont._id||axletter).toUpperCase()+' axis'),
-        font = cont.titlefont.family,
-        fontSize = cont.titlefont.size,
-        fontColor = cont.titlefont.color,
-        x,
-        y,
-        transform = '',
-        xa,
-        ya,
-        avoid = {
-            selection:d3.select(gd).selectAll('g.'+cont._id+'tick'),
-            side:cont.side
-        },
-        // multiples of fontsize to offset label from axis
-        offsetBase = colorbar ? 0 : 1.5,
-        avoidTransform;
+    // only make this title editable if we positively identify its property
+    // as one that has editing enabled.
+    var editAttr;
+    if(prop === 'title.text') editAttr = 'titleText';
+    else if(prop.indexOf('axis') !== -1) editAttr = 'axisTitleText';
+    else if(prop.indexOf('colorbar' !== -1)) editAttr = 'colorbarTitleText';
+    var editable = gd._context.edits[editAttr];
 
-    // find the transform applied to the parents of the avoid selection
-    // which doesn't get picked up by Plotly.Drawing.bBox
-    if(colorbar) {
-        avoid.offsetLeft = gs.l;
-        avoid.offsetTop = gs.t;
-    }
-    else if(avoid.selection.size()) {
-        avoidTransform = d3.select(avoid.selection.node().parentNode)
-            .attr('transform')
-            .match(/translate\(([-\.\d]+),([-\.\d]+)\)/);
-        if(avoidTransform) {
-            avoid.offsetLeft = +avoidTransform[1];
-            avoid.offsetTop = +avoidTransform[2];
-        }
-    }
-
-    if(colorbar && cont.titleside) {
-        // argh, we only make it here if the title is on top or bottom,
-        // not right
-        x = gs.l+cont.titlex*gs.w;
-        y = gs.t+(1-cont.titley)*gs.h + ((cont.titleside==='top') ?
-                3+fontSize*0.75 : - 3-fontSize*0.25);
-        options = {x: x, y: y, 'text-anchor':'start'};
-        avoid = {};
-
-        // convertToTspans rotates any 'y...' by 90 degrees...
-        // TODO: need a better solution than this hack
-        title = 'h'+title;
-    }
-    else if(axletter==='x'){
-        xa = cont;
-        ya = (xa.anchor==='free') ?
-            {_offset:gs.t+(1-(xa.position||0))*gs.h, _length:0} :
-            Plotly.Axes.getFromId(gd, xa.anchor);
-        x = xa._offset+xa._length/2;
-        y = ya._offset + ((xa.side==='top') ?
-            -10 - fontSize*(offsetBase + (xa.showticklabels ? 1 : 0)) :
-            ya._length + 10 +
-                fontSize*(offsetBase + (xa.showticklabels ? 1.5 : 0.5)));
-        options = {x: x, y: y, 'text-anchor': 'middle'};
-        if(!avoid.side) { avoid.side = 'bottom'; }
-    }
-    else if(axletter==='y'){
-        ya = cont;
-        xa = (ya.anchor==='free') ?
-            {_offset:gs.l+(ya.position||0)*gs.w, _length:0} :
-            Plotly.Axes.getFromId(gd, ya.anchor);
-        y = ya._offset+ya._length/2;
-        x = xa._offset + ((ya.side==='right') ?
-            xa._length + 10 +
-                fontSize*(offsetBase + (ya.showticklabels ? 1 : 0.5)) :
-            -10 - fontSize*(offsetBase + (ya.showticklabels ? 0.5 : 0)));
-        options = {x: x, y: y, 'text-anchor': 'middle'};
-        transform = {rotate: '-90', offset: 0};
-        if(!avoid.side) { avoid.side = 'left'; }
-    }
-    else{
-        // plot title
-        name = 'Plot';
-        fontSize = fullLayout.titlefont.size;
-        x = fullLayout.width/2;
-        y = fullLayout._size.t/2;
-        options = {x: x, y: y, 'text-anchor': 'middle'};
-        avoid = {};
-    }
-
-    var opacity = 1,
-        isplaceholder = false,
-        txt = cont.title.trim();
-    if(txt === '') { opacity = 0; }
-    if(txt.match(/Click to enter .+ title/)) {
+    if(txt === '') opacity = 0;
+    // look for placeholder text while stripping out numbers from eg X2, Y3
+    // this is just for backward compatibility with the old version that had
+    // "Click to enter X2 title" and may have gotten saved in some old plots,
+    // we don't want this to show up when these are displayed.
+    else if(txt.replace(numStripRE, ' % ') === placeholder.replace(numStripRE, ' % ')) {
         opacity = 0.2;
         isplaceholder = true;
+        if(!editable) txt = '';
     }
 
-    var group;
-    if(colorbar) {
-        group = d3.select(gd)
-            .selectAll('.'+cont._id.substr(1)+' .cbtitle');
-        // this class-to-rotate thing with convertToTspans is
-        // getting hackier and hackier... delete groups with the
-        // wrong class
-        var otherClass = title.charAt(0)==='h' ?
-            title.substr(1) : ('h'+title);
-        group.selectAll('.'+otherClass+',.'+otherClass+'-math-group')
-            .remove();
+    if(options._meta) {
+        txt = Lib.templateString(txt, options._meta);
+    } else if(fullLayout._meta) {
+        txt = Lib.templateString(txt, fullLayout._meta);
     }
-    else {
-        group = fullLayout._infolayer.selectAll('.g-'+title)
-            .data([0]);
-        group.enter().append('g')
-            .classed('g-'+title, true);
+
+    var elShouldExist = txt || editable;
+
+    if(!group) {
+        group = Lib.ensureSingle(fullLayout._infolayer, 'g', 'g-' + titleClass);
     }
 
     var el = group.selectAll('text')
-        .data([0]);
+        .data(elShouldExist ? [0] : []);
     el.enter().append('text');
     el.text(txt)
         // this is hacky, but convertToTspans uses the class
@@ -170,144 +109,149 @@ Titles.draw = function(gd, title) {
         // so we need to clear out any old class and put the
         // correct one (only relevant for colorbars, at least
         // for now) - ie don't use .classed
-        .attr('class', title);
+        .attr('class', titleClass);
+    el.exit().remove();
 
-    function titleLayout(titleEl){
-        Plotly.Lib.syncOrAsync([drawTitle,scootTitle], titleEl);
+    if(!elShouldExist) return group;
+
+    function titleLayout(titleEl) {
+        Lib.syncOrAsync([drawTitle, scootTitle], titleEl);
     }
 
     function drawTitle(titleEl) {
-        titleEl.attr('transform', transform ?
-            'rotate(' + [transform.rotate, options.x, options.y] +
-                ') translate(0, '+transform.offset+')' :
-            null);
+        var transformVal;
+
+        if(transform) {
+            transformVal = '';
+            if(transform.rotate) {
+                transformVal += 'rotate(' + [transform.rotate, attributes.x, attributes.y] + ')';
+            }
+            if(transform.offset) {
+                transformVal += strTranslate(0, transform.offset);
+            }
+        } else {
+            transformVal = null;
+        }
+
+        titleEl.attr('transform', transformVal);
 
         titleEl.style({
-            'font-family': font,
-            'font-size': d3.round(fontSize,2)+'px',
-            fill: Plotly.Color.rgb(fontColor),
-            opacity: opacity*Plotly.Color.opacity(fontColor),
-            'font-weight': plots.fontWeight
+            'font-family': fontFamily,
+            'font-size': d3.round(fontSize, 2) + 'px',
+            fill: Color.rgb(fontColor),
+            opacity: opacity * Color.opacity(fontColor),
+            'font-weight': Plots.fontWeight
         })
-        .attr(options)
-        .call(Plotly.util.convertToTspans)
-        .attr(options);
+        .attr(attributes)
+        .call(svgTextUtils.convertToTspans, gd);
 
-        titleEl.selectAll('tspan.line')
-            .attr(options);
-        return plots.previousPromises(gd);
+        return Plots.previousPromises(gd);
     }
 
     function scootTitle(titleElIn) {
         var titleGroup = d3.select(titleElIn.node().parentNode);
 
-        if(avoid && avoid.selection && avoid.side && txt){
-            titleGroup.attr('transform',null);
+        if(avoid && avoid.selection && avoid.side && txt) {
+            titleGroup.attr('transform', null);
 
             // move toward avoid.side (= left, right, top, bottom) if needed
             // can include pad (pixels, default 2)
-            var shift = 0,
-                backside = {
-                    left: 'right',
-                    right: 'left',
-                    top: 'bottom',
-                    bottom: 'top'
-                }[avoid.side],
-                shiftSign = (['left','top'].indexOf(avoid.side)!==-1) ?
-                    -1 : 1,
-                pad = isNumeric(avoid.pad) ? avoid.pad : 2,
-                titlebb = Plotly.Drawing.bBox(titleGroup.node()),
-                paperbb = {
-                    left: 0,
-                    top: 0,
-                    right: fullLayout.width,
-                    bottom: fullLayout.height
-                },
-                maxshift = colorbar ? fullLayout.width:
-                    (paperbb[avoid.side]-titlebb[avoid.side]) *
-                    ((avoid.side==='left' || avoid.side==='top') ? -1 : 1);
+            var backside = OPPOSITE_SIDE[avoid.side];
+            var shiftSign = (avoid.side === 'left' || avoid.side === 'top') ? -1 : 1;
+            var pad = isNumeric(avoid.pad) ? avoid.pad : 2;
+
+            var titlebb = Drawing.bBox(titleGroup.node());
+            var paperbb = {
+                left: 0,
+                top: 0,
+                right: fullLayout.width,
+                bottom: fullLayout.height
+            };
+
+            var maxshift = avoid.maxShift ||
+                shiftSign * (paperbb[avoid.side] - titlebb[avoid.side]);
+            var shift = 0;
+
             // Prevent the title going off the paper
-            if(maxshift<0) shift = maxshift;
-            else {
+            if(maxshift < 0) {
+                shift = maxshift;
+            } else {
                 // so we don't have to offset each avoided element,
                 // give the title the opposite offset
-                titlebb.left -= avoid.offsetLeft;
-                titlebb.right -= avoid.offsetLeft;
-                titlebb.top -= avoid.offsetTop;
-                titlebb.bottom -= avoid.offsetTop;
+                var offsetLeft = avoid.offsetLeft || 0;
+                var offsetTop = avoid.offsetTop || 0;
+                titlebb.left -= offsetLeft;
+                titlebb.right -= offsetLeft;
+                titlebb.top -= offsetTop;
+                titlebb.bottom -= offsetTop;
 
                 // iterate over a set of elements (avoid.selection)
                 // to avoid collisions with
-                avoid.selection.each(function(){
-                    var avoidbb = Plotly.Drawing.bBox(this);
+                avoid.selection.each(function() {
+                    var avoidbb = Drawing.bBox(this);
 
-                    if(Plotly.Lib.bBoxIntersect(titlebb,avoidbb,pad)) {
+                    if(Lib.bBoxIntersect(titlebb, avoidbb, pad)) {
                         shift = Math.max(shift, shiftSign * (
                             avoidbb[avoid.side] - titlebb[backside]) + pad);
                     }
                 });
                 shift = Math.min(maxshift, shift);
             }
-            if(shift>0 || maxshift<0) {
+
+            if(shift > 0 || maxshift < 0) {
                 var shiftTemplate = {
                     left: [-shift, 0],
                     right: [shift, 0],
                     top: [0, -shift],
                     bottom: [0, shift]
                 }[avoid.side];
-                titleGroup.attr('transform',
-                    'translate(' + shiftTemplate + ')');
+                titleGroup.attr('transform', strTranslate(shiftTemplate[0], shiftTemplate[1]));
             }
         }
     }
 
-    el.attr({'data-unformatted': txt})
-        .call(titleLayout);
+    el.call(titleLayout);
 
-    var placeholderText = 'Click to enter '+name.replace(/\d+/,'')+' title';
-
-    function setPlaceholder(){
+    function setPlaceholder() {
         opacity = 0;
         isplaceholder = true;
-        txt = placeholderText;
-        fullLayout._infolayer.select('.'+title)
-            .attr({'data-unformatted': txt})
-            .text(txt)
-            .on('mouseover.opacity',function(){
+        el.text(placeholder)
+            .on('mouseover.opacity', function() {
                 d3.select(this).transition()
-                    .duration(100).style('opacity',1);
+                    .duration(interactConstants.SHOW_PLACEHOLDER).style('opacity', 1);
             })
-            .on('mouseout.opacity',function(){
+            .on('mouseout.opacity', function() {
                 d3.select(this).transition()
-                    .duration(1000).style('opacity',0);
+                    .duration(interactConstants.HIDE_PLACEHOLDER).style('opacity', 0);
             });
     }
 
-    if(gd._context.editable){
+    if(editable) {
         if(!txt) setPlaceholder();
+        else el.on('.opacity', null);
 
-        el.call(Plotly.util.makeEditable)
-            .on('edit', function(text){
-                if(colorbar) {
-                    var trace = gd._fullData[cbnum];
-                    if(plots.traceIs(trace, 'markerColorscale')) {
-                        Plotly.restyle(gd, 'marker.colorbar.title', text, cbnum);
-                    } else Plotly.restyle(gd, 'colorbar.title', text, cbnum);
+        el.call(svgTextUtils.makeEditable, {gd: gd})
+            .on('edit', function(text) {
+                if(traceIndex !== undefined) {
+                    Registry.call('_guiRestyle', gd, prop, text, traceIndex);
+                } else {
+                    Registry.call('_guiRelayout', gd, prop, text);
                 }
-                else Plotly.relayout(gd,prop,text);
             })
-            .on('cancel', function(){
+            .on('cancel', function() {
                 this.text(this.attr('data-unformatted'))
                     .call(titleLayout);
             })
-            .on('input', function(d){
-                this.text(d || ' ').attr(options)
-                    .selectAll('tspan.line')
-                        .attr(options);
+            .on('input', function(d) {
+                this.text(d || ' ')
+                    .call(svgTextUtils.positionText, attributes.x, attributes.y);
             });
     }
-    else if(!txt || txt.match(/Click to enter .+ title/)) {
-        el.remove();
-    }
-    el.classed('js-placeholder',isplaceholder);
+    el.classed('js-placeholder', isplaceholder);
+
+    return group;
+}
+
+module.exports = {
+    draw: draw
 };

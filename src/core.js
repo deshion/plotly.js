@@ -1,45 +1,82 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
 'use strict';
 
-/*
- * Export the plotly.js API methods.
- */
+exports.version = require('./version').version;
 
-var Plotly = require('./plotly');
+// inject promise polyfill
+require('native-promise-only');
 
-// package version injected by `npm run preprocess`
-exports.version = '1.5.0';
+// inject plot css
+require('../build/plotcss');
 
-// plot api
-exports.plot = Plotly.plot;
-exports.newPlot = Plotly.newPlot;
-exports.restyle = Plotly.restyle;
-exports.relayout = Plotly.relayout;
-exports.redraw = Plotly.redraw;
-exports.extendTraces = Plotly.extendTraces;
-exports.prependTraces = Plotly.prependTraces;
-exports.addTraces = Plotly.addTraces;
-exports.deleteTraces = Plotly.deleteTraces;
-exports.moveTraces = Plotly.moveTraces;
-exports.setPlotConfig = require('./plot_api/set_plot_config');
-exports.register = Plotly.register;
+// include registry module and expose register method
+var Registry = require('./registry');
+var register = exports.register = Registry.register;
+
+// expose plot api methods
+var plotApi = require('./plot_api');
+var methodNames = Object.keys(plotApi);
+for(var i = 0; i < methodNames.length; i++) {
+    var name = methodNames[i];
+    // _ -> private API methods, but still registered for internal use
+    if(name.charAt(0) !== '_') exports[name] = plotApi[name];
+    register({
+        moduleType: 'apiMethod',
+        name: name,
+        fn: plotApi[name]
+    });
+}
+
+// scatter is the only trace included by default
+register(require('./traces/scatter'));
+
+// register all registrable components modules
+register([
+    require('./components/legend'),
+    require('./components/fx'), // fx needs to come after legend
+    require('./components/annotations'),
+    require('./components/annotations3d'),
+    require('./components/shapes'),
+    require('./components/images'),
+    require('./components/updatemenus'),
+    require('./components/sliders'),
+    require('./components/rangeslider'),
+    require('./components/rangeselector'),
+    require('./components/grid'),
+    require('./components/errorbars'),
+    require('./components/colorscale'),
+    require('./components/colorbar'),
+    require('./components/modebar')
+]);
+
+// locales en and en-US are required for default behavior
+register([
+    require('./locale-en'),
+    require('./locale-en-us')
+]);
+
+// locales that are present in the window should be loaded
+if(window.PlotlyLocales && Array.isArray(window.PlotlyLocales)) {
+    register(window.PlotlyLocales);
+    delete window.PlotlyLocales;
+}
 
 // plot icons
-exports.Icons = require('../build/ploticon');
+exports.Icons = require('./fonts/ploticon');
 
 // unofficial 'beta' plot methods, use at your own risk
-exports.Plots = Plotly.Plots;
-exports.Fx = Plotly.Fx;
-exports.Snapshot = Plotly.Snapshot;
-exports.PlotSchema = Plotly.PlotSchema;
-exports.Queue = Plotly.Queue;
+var Fx = require('./components/fx');
+var Plots = require('./plots/plots');
 
-// export d3 used in the bundle
-exports.d3 = require('d3');
+exports.Plots = {
+    resize: Plots.resize,
+    graphJson: Plots.graphJson,
+    sendDataToCloud: Plots.sendDataToCloud
+};
+exports.Fx = {
+    hover: Fx.hover,
+    unhover: Fx.unhover,
+    loneHover: Fx.loneHover,
+    loneUnhover: Fx.loneUnhover
+};
+exports.Snapshot = require('./snapshot');
+exports.PlotSchema = require('./plot_api/plot_schema');

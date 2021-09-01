@@ -1,50 +1,73 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
-var d3 = require('d3');
+var d3 = require('@plotly/d3');
+var Lib = require('../../lib');
+var Registry = require('../../registry');
 
-var radians = Math.PI / 180,
-    degrees = 180 / Math.PI,
-    zoomstartStyle = { cursor: 'pointer' },
-    zoomendStyle = { cursor: 'auto' };
-
+var radians = Math.PI / 180;
+var degrees = 180 / Math.PI;
+var zoomstartStyle = {cursor: 'pointer'};
+var zoomendStyle = {cursor: 'auto'};
 
 function createGeoZoom(geo, geoLayout) {
+    var projection = geo.projection;
     var zoomConstructor;
 
-    if(geoLayout._isScoped) zoomConstructor = zoomScoped;
-    else if(geoLayout._clipAngle) zoomConstructor = zoomClipped;
-    else zoomConstructor = zoomNonClipped;
+    if(geoLayout._isScoped) {
+        zoomConstructor = zoomScoped;
+    } else if(geoLayout._isClipped) {
+        zoomConstructor = zoomClipped;
+    } else {
+        zoomConstructor = zoomNonClipped;
+    }
 
     // TODO add a conic-specific zoom
 
-    return zoomConstructor(geo, geoLayout.projection);
+    return zoomConstructor(geo, projection);
 }
 
 module.exports = createGeoZoom;
 
 // common to all zoom types
-function initZoom(projection, projLayout) {
-    var fullScale = projLayout._fullScale;
-
+function initZoom(geo, projection) {
     return d3.behavior.zoom()
         .translate(projection.translate())
-        .scale(projection.scale())
-        .scaleExtent([0.5 * fullScale, 100 * fullScale]);
+        .scale(projection.scale());
+}
+
+// sync zoom updates with user & full layout
+function sync(geo, projection, cb) {
+    var id = geo.id;
+    var gd = geo.graphDiv;
+    var layout = gd.layout;
+    var userOpts = layout[id];
+    var fullLayout = gd._fullLayout;
+    var fullOpts = fullLayout[id];
+
+    var preGUI = {};
+    var eventData = {};
+
+    function set(propStr, val) {
+        preGUI[id + '.' + propStr] = Lib.nestedProperty(userOpts, propStr).get();
+        Registry.call('_storeDirectGUIEdit', layout, fullLayout._preGUI, preGUI);
+
+        var fullNp = Lib.nestedProperty(fullOpts, propStr);
+        if(fullNp.get() !== val) {
+            fullNp.set(val);
+            Lib.nestedProperty(userOpts, propStr).set(val);
+            eventData[id + '.' + propStr] = val;
+        }
+    }
+
+    cb(set);
+    set('projection.scale', projection.scale() / geo.fitScale);
+    set('fitbounds', false);
+    gd.emit('plotly_relayout', eventData);
 }
 
 // zoom for scoped projections
-function zoomScoped(geo, projLayout) {
-    var projection = geo.projection,
-        zoom = initZoom(projection, projLayout);
+function zoomScoped(geo, projection) {
+    var zoom = initZoom(geo, projection);
 
     function handleZoomstart() {
         d3.select(this).style(zoomstartStyle);
@@ -54,12 +77,26 @@ function zoomScoped(geo, projLayout) {
         projection
             .scale(d3.event.scale)
             .translate(d3.event.translate);
-
         geo.render();
+
+        var center = projection.invert(geo.midPt);
+        geo.graphDiv.emit('plotly_relayouting', {
+            'geo.projection.scale': projection.scale() / geo.fitScale,
+            'geo.center.lon': center[0],
+            'geo.center.lat': center[1]
+        });
+    }
+
+    function syncCb(set) {
+        var center = projection.invert(geo.midPt);
+
+        set('center.lon', center[0]);
+        set('center.lat', center[1]);
     }
 
     function handleZoomend() {
         d3.select(this).style(zoomendStyle);
+        sync(geo, projection, syncCb);
     }
 
     zoom
@@ -71,21 +108,25 @@ function zoomScoped(geo, projLayout) {
 }
 
 // zoom for non-clipped projections
-function zoomNonClipped(geo, projLayout) {
-    var projection = geo.projection,
-        zoom = initZoom(projection, projLayout);
+function zoomNonClipped(geo, projection) {
+    var zoom = initZoom(geo, projection);
 
     var INSIDETOLORANCEPXS = 2;
 
     var mouse0, rotate0, translate0, lastRotate, zoomPoint,
-        mouse1, rotate1, point1;
+        mouse1, rotate1, point1, didZoom;
 
     function position(x) { return projection.invert(x); }
 
     function outside(x) {
-        var pt = projection(position(x));
-        return (Math.abs(pt[0] - x[0]) > INSIDETOLORANCEPXS ||
-                Math.abs(pt[1] - x[1]) > INSIDETOLORANCEPXS);
+        var pos = position(x);
+        if(!pos) return true;
+
+        var pt = projection(pos);
+        return (
+            Math.abs(pt[0] - x[0]) > INSIDETOLORANCEPXS ||
+            Math.abs(pt[1] - x[1]) > INSIDETOLORANCEPXS
+        );
     }
 
     function handleZoomstart() {
@@ -108,29 +149,43 @@ function zoomNonClipped(geo, projLayout) {
         }
 
         projection.scale(d3.event.scale);
-
         projection.translate([translate0[0], d3.event.translate[1]]);
 
         if(!zoomPoint) {
             mouse0 = mouse1;
             zoomPoint = position(mouse0);
-        }
-        else if(position(mouse1)) {
+        } else if(position(mouse1)) {
             point1 = position(mouse1);
             rotate1 = [lastRotate[0] + (point1[0] - zoomPoint[0]), rotate0[1], rotate0[2]];
             projection.rotate(rotate1);
             lastRotate = rotate1;
         }
 
+        didZoom = true;
         geo.render();
+
+        var rotate = projection.rotate();
+        var center = projection.invert(geo.midPt);
+        geo.graphDiv.emit('plotly_relayouting', {
+            'geo.projection.scale': projection.scale() / geo.fitScale,
+            'geo.center.lon': center[0],
+            'geo.center.lat': center[1],
+            'geo.projection.rotation.lon': -rotate[0]
+        });
     }
 
     function handleZoomend() {
         d3.select(this).style(zoomendStyle);
+        if(didZoom) sync(geo, projection, syncCb);
+    }
 
-        // or something like
-        // http://www.jasondavies.com/maps/gilbert/
-        // ... a little harder with multiple base layers
+    function syncCb(set) {
+        var rotate = projection.rotate();
+        var center = projection.invert(geo.midPt);
+
+        set('projection.rotation.lon', -rotate[0]);
+        set('center.lon', center[0]);
+        set('center.lat', center[1]);
     }
 
     zoom
@@ -143,24 +198,23 @@ function zoomNonClipped(geo, projLayout) {
 
 // zoom for clipped projections
 // inspired by https://www.jasondavies.com/maps/d3.geo.zoom.js
-function zoomClipped(geo, projLayout) {
-    var projection = geo.projection,
-        view = {r: projection.rotate(), k: projection.scale()},
-        zoom = initZoom(projection, projLayout),
-        event = d3_eventDispatch(zoom, 'zoomstart', 'zoom', 'zoomend'),
-        zooming = 0,
-        zoomOn = zoom.on;
+function zoomClipped(geo, projection) {
+    var view = {r: projection.rotate(), k: projection.scale()};
+    var zoom = initZoom(geo, projection);
+    var event = d3eventDispatch(zoom, 'zoomstart', 'zoom', 'zoomend');
+    var zooming = 0;
+    var zoomOn = zoom.on;
 
     var zoomPoint;
 
     zoom.on('zoomstart', function() {
         d3.select(this).style(zoomstartStyle);
 
-        var mouse0 = d3.mouse(this),
-            rotate0 = projection.rotate(),
-            lastRotate = rotate0,
-            translate0 = projection.translate(),
-            q = quaternionFromEuler(rotate0);
+        var mouse0 = d3.mouse(this);
+        var rotate0 = projection.rotate();
+        var lastRotate = rotate0;
+        var translate0 = projection.translate();
+        var q = quaternionFromEuler(rotate0);
 
         zoomPoint = position(projection, mouse0);
 
@@ -174,13 +228,12 @@ function zoomClipped(geo, projLayout) {
                 // maybe this point is the start... we'll find out next time!
                 mouse0 = mouse1;
                 zoomPoint = position(projection, mouse0);
-            }
-            // check if the point is on the map
-            // if not, don't do anything new but scale
-            // if it is, then we can assume between will exist below
-            // so we don't need the 'bank' function, whatever that is.
-            // TODO: is this right?
-            else if(position(projection, mouse1)) {
+            } else if(position(projection, mouse1)) {
+                // check if the point is on the map
+                // if not, don't do anything new but scale
+                // if it is, then we can assume between will exist below
+                // so we don't need the 'bank' function, whatever that is.
+
                 // go back to original projection temporarily
                 // except for scale... that's kind of independent?
                 projection
@@ -188,10 +241,10 @@ function zoomClipped(geo, projLayout) {
                     .translate(translate0);
 
                 // calculate the new params
-                var point1 = position(projection, mouse1),
-                    between = rotateBetween(zoomPoint, point1),
-                    newEuler = eulerFromQuaternion(multiply(q, between)),
-                    rotateAngles = view.r = unRoll(newEuler, zoomPoint, lastRotate);
+                var point1 = position(projection, mouse1);
+                var between = rotateBetween(zoomPoint, point1);
+                var newEuler = eulerFromQuaternion(multiply(q, between));
+                var rotateAngles = view.r = unRoll(newEuler, zoomPoint, lastRotate);
 
                 if(!isFinite(rotateAngles[0]) || !isFinite(rotateAngles[1]) ||
                    !isFinite(rotateAngles[2])) {
@@ -212,13 +265,21 @@ function zoomClipped(geo, projLayout) {
         d3.select(this).style(zoomendStyle);
         zoomOn.call(zoom, 'zoom', null);
         zoomended(event.of(this, arguments));
+        sync(geo, projection, syncCb);
     })
     .on('zoom.redraw', function() {
         geo.render();
+
+        var _rotate = projection.rotate();
+        geo.graphDiv.emit('plotly_relayouting', {
+            'geo.projection.scale': projection.scale() / geo.fitScale,
+            'geo.projection.rotation.lon': -_rotate[0],
+            'geo.projection.rotation.lat': -_rotate[1]
+        });
     });
 
     function zoomstarted(dispatch) {
-        if (!zooming++) dispatch({type: 'zoomstart'});
+        if(!zooming++) dispatch({type: 'zoomstart'});
     }
 
     function zoomed(dispatch) {
@@ -226,7 +287,13 @@ function zoomClipped(geo, projLayout) {
     }
 
     function zoomended(dispatch) {
-        if (!--zooming) dispatch({type: 'zoomend'});
+        if(!--zooming) dispatch({type: 'zoomend'});
+    }
+
+    function syncCb(set) {
+        var _rotate = projection.rotate();
+        set('projection.rotation.lon', -_rotate[0]);
+        set('projection.rotation.lat', -_rotate[1]);
     }
 
     return d3.rebind(zoom, event, 'on');
@@ -240,12 +307,15 @@ function position(projection, point) {
 }
 
 function quaternionFromEuler(euler) {
-    var lambda = 0.5 * euler[0] * radians,
-        phi = 0.5 * euler[1] * radians,
-        gamma = 0.5 * euler[2] * radians,
-        sinLambda = Math.sin(lambda), cosLambda = Math.cos(lambda),
-        sinPhi = Math.sin(phi), cosPhi = Math.cos(phi),
-        sinGamma = Math.sin(gamma), cosGamma = Math.cos(gamma);
+    var lambda = 0.5 * euler[0] * radians;
+    var phi = 0.5 * euler[1] * radians;
+    var gamma = 0.5 * euler[2] * radians;
+    var sinLambda = Math.sin(lambda);
+    var cosLambda = Math.cos(lambda);
+    var sinPhi = Math.sin(phi);
+    var cosPhi = Math.cos(phi);
+    var sinGamma = Math.sin(gamma);
+    var cosGamma = Math.cos(gamma);
     return [
         cosLambda * cosPhi * cosGamma + sinLambda * sinPhi * sinGamma,
         sinLambda * cosPhi * cosGamma - cosLambda * sinPhi * sinGamma,
@@ -255,8 +325,14 @@ function quaternionFromEuler(euler) {
 }
 
 function multiply(a, b) {
-    var a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3],
-        b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3];
+    var a0 = a[0];
+    var a1 = a[1];
+    var a2 = a[2];
+    var a3 = a[3];
+    var b0 = b[0];
+    var b1 = b[1];
+    var b2 = b[2];
+    var b3 = b[3];
     return [
         a0 * b0 - a1 * b1 - a2 * b2 - a3 * b3,
         a0 * b1 + a1 * b0 + a2 * b3 - a3 * b2,
@@ -266,11 +342,11 @@ function multiply(a, b) {
 }
 
 function rotateBetween(a, b) {
-    if (!a || !b) return;
-    var axis = cross(a, b),
-        norm = Math.sqrt(dot(axis, axis)),
-        halfgamma = 0.5 * Math.acos(Math.max(-1, Math.min(1, dot(a, b)))),
-        k = Math.sin(halfgamma) / norm;
+    if(!a || !b) return;
+    var axis = cross(a, b);
+    var norm = Math.sqrt(dot(axis, axis));
+    var halfgamma = 0.5 * Math.acos(Math.max(-1, Math.min(1, dot(a, b))));
+    var k = Math.sin(halfgamma) / norm;
     return norm && [Math.cos(halfgamma), axis[2] * k, -axis[1] * k, axis[0] * k];
 }
 
@@ -290,20 +366,20 @@ function unRoll(rotateAngles, pt, lastRotate) {
     ptRotated = rotateCartesian(ptRotated, 1, rotateAngles[1]);
     ptRotated = rotateCartesian(ptRotated, 0, rotateAngles[2] - lastRotate[2]);
 
-    var x = pt[0],
-        y = pt[1],
-        z = pt[2],
-        f = ptRotated[0],
-        g = ptRotated[1],
-        h = ptRotated[2],
+    var x = pt[0];
+    var y = pt[1];
+    var z = pt[2];
+    var f = ptRotated[0];
+    var g = ptRotated[1];
+    var h = ptRotated[2];
 
-        // the following essentially solves:
-        // ptRotated = rotateCartesian(rotateCartesian(pt, 2, newYaw), 1, newPitch)
-        // for newYaw and newPitch, as best it can
-        theta = Math.atan2(y, x) * degrees,
-        a = Math.sqrt(x * x + y * y),
-        b,
-        newYaw1;
+    // the following essentially solves:
+    // ptRotated = rotateCartesian(rotateCartesian(pt, 2, newYaw), 1, newPitch)
+    // for newYaw and newPitch, as best it can
+    var theta = Math.atan2(y, x) * degrees;
+    var a = Math.sqrt(x * x + y * y);
+    var b;
+    var newYaw1;
 
     if(Math.abs(g) > a) {
         newYaw1 = (g > 0 ? 90 : -90) - theta;
@@ -313,39 +389,39 @@ function unRoll(rotateAngles, pt, lastRotate) {
         b = Math.sqrt(a * a - g * g);
     }
 
-    var newYaw2 = 180 - newYaw1 - 2*theta,
-        newPitch1 = (Math.atan2(h, f) - Math.atan2(z, b)) * degrees,
-        newPitch2 = (Math.atan2(h, f) - Math.atan2(z, -b)) * degrees;
+    var newYaw2 = 180 - newYaw1 - 2 * theta;
+    var newPitch1 = (Math.atan2(h, f) - Math.atan2(z, b)) * degrees;
+    var newPitch2 = (Math.atan2(h, f) - Math.atan2(z, -b)) * degrees;
 
     // which is closest to lastRotate[0,1]: newYaw/Pitch or newYaw2/Pitch2?
-    var dist1 = angleDistance(lastRotate[0], lastRotate[1], newYaw1, newPitch1),
-        dist2 = angleDistance(lastRotate[0], lastRotate[1], newYaw2, newPitch2);
+    var dist1 = angleDistance(lastRotate[0], lastRotate[1], newYaw1, newPitch1);
+    var dist2 = angleDistance(lastRotate[0], lastRotate[1], newYaw2, newPitch2);
 
     if(dist1 <= dist2) return [newYaw1, newPitch1, lastRotate[2]];
     else return [newYaw2, newPitch2, lastRotate[2]];
 }
 
 function angleDistance(yaw0, pitch0, yaw1, pitch1) {
-    var dYaw = angleMod(yaw1 - yaw0),
-        dPitch = angleMod(pitch1 - pitch0);
+    var dYaw = angleMod(yaw1 - yaw0);
+    var dPitch = angleMod(pitch1 - pitch0);
     return Math.sqrt(dYaw * dYaw + dPitch * dPitch);
 }
 
 // reduce an angle in degrees to [-180,180]
 function angleMod(angle) {
-    return (angle % 360 + 540) %360 - 180;
+    return (angle % 360 + 540) % 360 - 180;
 }
 
 // rotate a cartesian vector
 // axis is 0 (x), 1 (y), or 2 (z)
 // angle is in degrees
 function rotateCartesian(vector, axis, angle) {
-    var angleRads = angle * radians,
-        vectorOut = vector.slice(),
-        ax1 = (axis===0) ? 1 : 0,
-        ax2 = (axis===2) ? 1 : 2,
-        cosa = Math.cos(angleRads),
-        sina = Math.sin(angleRads);
+    var angleRads = angle * radians;
+    var vectorOut = vector.slice();
+    var ax1 = (axis === 0) ? 1 : 0;
+    var ax2 = (axis === 2) ? 1 : 2;
+    var cosa = Math.cos(angleRads);
+    var sina = Math.sin(angleRads);
 
     vectorOut[ax1] = vector[ax1] * cosa - vector[ax2] * sina;
     vectorOut[ax2] = vector[ax2] * cosa + vector[ax1] * sina;
@@ -361,9 +437,9 @@ function eulerFromQuaternion(q) {
 }
 
 function cartesian(spherical) {
-    var lambda = spherical[0] * radians,
-        phi = spherical[1] * radians,
-        cosPhi = Math.cos(phi);
+    var lambda = spherical[0] * radians;
+    var phi = spherical[1] * radians;
+    var cosPhi = Math.cos(phi);
     return [
         cosPhi * Math.cos(lambda),
         cosPhi * Math.sin(lambda),
@@ -373,7 +449,7 @@ function cartesian(spherical) {
 
 function dot(a, b) {
     var s = 0;
-    for (var i = 0, n = a.length; i < n; ++i) s += a[i] * b[i];
+    for(var i = 0, n = a.length; i < n; ++i) s += a[i] * b[i];
     return s;
 }
 
@@ -389,12 +465,12 @@ function cross(a, b) {
 // events have a target component (such as a brush), a target element (such as
 // the svg:g element containing the brush) and the standard arguments `d` (the
 // target element's data) and `i` (the selection index of the target element).
-function d3_eventDispatch(target) {
-    var i = 0,
-        n = arguments.length,
-        argumentz = [];
+function d3eventDispatch(target) {
+    var i = 0;
+    var n = arguments.length;
+    var argumentz = [];
 
-    while (++i < n) argumentz.push(arguments[i]);
+    while(++i < n) argumentz.push(arguments[i]);
 
     var dispatch = d3.dispatch.apply(null, argumentz);
 

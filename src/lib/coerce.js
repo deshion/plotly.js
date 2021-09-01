@@ -1,34 +1,32 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
 var isNumeric = require('fast-isnumeric');
 var tinycolor = require('tinycolor2');
+
+var baseTraceAttrs = require('../plots/attributes');
+var colorscales = require('../components/colorscale/scales');
+var Color = require('../components/color');
+var DESELECTDIM = require('../constants/interactions').DESELECTDIM;
+
 var nestedProperty = require('./nested_property');
+var counterRegex = require('./regex').counter;
+var modHalf = require('./mod').modHalf;
+var isArrayOrTypedArray = require('./array').isArrayOrTypedArray;
 
-var getColorscale = require('../components/colorscale/get_scale');
-var colorscaleNames = Object.keys(require('../components/colorscale/scales'));
-
-
-exports.valObjects = {
+exports.valObjectMeta = {
     data_array: {
         // You can use *dflt=[] to force said array to exist though.
         description: [
             'An {array} of data.',
-            'The value MUST be an {array}, or we ignore it.'
+            'The value MUST be an {array}, or we ignore it.',
+            'Note that typed arrays (e.g. Float32Array) are supported.'
         ].join(' '),
         requiredOpts: [],
         otherOpts: ['dflt'],
         coerceFunction: function(v, propOut, dflt) {
-            if(Array.isArray(v)) propOut.set(v);
-            else if(dflt!==undefined) propOut.set(dflt);
+            // TODO maybe `v: {type: 'float32', vals: [/* ... */]}` also
+            if(isArrayOrTypedArray(v)) propOut.set(v);
+            else if(dflt !== undefined) propOut.set(dflt);
         }
     },
     enumerated: {
@@ -40,8 +38,22 @@ exports.valObjects = {
         otherOpts: ['dflt', 'coerceNumber', 'arrayOk'],
         coerceFunction: function(v, propOut, dflt, opts) {
             if(opts.coerceNumber) v = +v;
-            if(opts.values.indexOf(v)===-1) propOut.set(dflt);
+            if(opts.values.indexOf(v) === -1) propOut.set(dflt);
             else propOut.set(v);
+        },
+        validateFunction: function(v, opts) {
+            if(opts.coerceNumber) v = +v;
+
+            var values = opts.values;
+            for(var i = 0; i < values.length; i++) {
+                var k = String(values[i]);
+
+                if((k.charAt(0) === '/' && k.charAt(k.length - 1) === '/')) {
+                    var regex = new RegExp(k.substr(1, k.length - 2));
+                    if(regex.test(v)) return true;
+                } else if(v === values[i]) return true;
+            }
+            return false;
         }
     },
     'boolean': {
@@ -49,7 +61,7 @@ exports.valObjects = {
         requiredOpts: [],
         otherOpts: ['dflt'],
         coerceFunction: function(v, propOut, dflt) {
-            if(v===true || v===false) propOut.set(v);
+            if(v === true || v === false) propOut.set(v);
             else propOut.set(dflt);
         }
     },
@@ -64,11 +76,10 @@ exports.valObjects = {
         otherOpts: ['dflt', 'min', 'max', 'arrayOk'],
         coerceFunction: function(v, propOut, dflt, opts) {
             if(!isNumeric(v) ||
-                    (opts.min!==undefined && v<opts.min) ||
-                    (opts.max!==undefined && v>opts.max)) {
+                    (opts.min !== undefined && v < opts.min) ||
+                    (opts.max !== undefined && v > opts.max)) {
                 propOut.set(dflt);
-            }
-            else propOut.set(+v);
+            } else propOut.set(+v);
         }
     },
     integer: {
@@ -78,14 +89,13 @@ exports.valObjects = {
             'are coerced to the `dflt`.'
         ].join(' '),
         requiredOpts: [],
-        otherOpts: ['dflt', 'min', 'max'],
+        otherOpts: ['dflt', 'min', 'max', 'arrayOk'],
         coerceFunction: function(v, propOut, dflt, opts) {
-            if(v%1 || !isNumeric(v) ||
-                    (opts.min!==undefined && v<opts.min) ||
-                    (opts.max!==undefined && v>opts.max)) {
+            if(v % 1 || !isNumeric(v) ||
+                    (opts.min !== undefined && v < opts.min) ||
+                    (opts.max !== undefined && v > opts.max)) {
                 propOut.set(dflt);
-            }
-            else propOut.set(+v);
+            } else propOut.set(+v);
         }
     },
     string: {
@@ -98,16 +108,13 @@ exports.valObjects = {
         // TODO 'values shouldn't be in there (edge case: 'dash' in Scatter)
         otherOpts: ['dflt', 'noBlank', 'strict', 'arrayOk', 'values'],
         coerceFunction: function(v, propOut, dflt, opts) {
-            if(opts.strict===true && typeof v !== 'string') {
-                propOut.set(dflt);
-                return;
-            }
+            if(typeof v !== 'string') {
+                var okToCoerce = (typeof v === 'number');
 
-            var s = String(v);
-            if(v===undefined || (opts.noBlank===true && !s)) {
-                propOut.set(dflt);
-            }
-            else propOut.set(s);
+                if(opts.strict === true || !okToCoerce) propOut.set(dflt);
+                else propOut.set(String(v));
+            } else if(opts.noBlank && !v) propOut.set(dflt);
+            else propOut.set(v);
         }
     },
     color: {
@@ -128,10 +135,26 @@ exports.valObjects = {
             else propOut.set(dflt);
         }
     },
+    colorlist: {
+        description: [
+            'A list of colors.',
+            'Must be an {array} containing valid colors.',
+        ].join(' '),
+        requiredOpts: [],
+        otherOpts: ['dflt'],
+        coerceFunction: function(v, propOut, dflt) {
+            function isColor(color) {
+                return tinycolor(color).isValid();
+            }
+            if(!Array.isArray(v) || !v.length) propOut.set(dflt);
+            else if(v.every(isColor)) propOut.set(v);
+            else propOut.set(dflt);
+        }
+    },
     colorscale: {
         description: [
             'A Plotly colorscale either picked by a name:',
-            '(any of', colorscaleNames.join(', '), ')',
+            '(any of', Object.keys(colorscales.scales).join(', '), ')',
             'customized as an {array} of 2-element {arrays} where',
             'the first element is the normalized color level value',
             '(starting at *0* and ending at *1*),',
@@ -140,7 +163,7 @@ exports.valObjects = {
         requiredOpts: [],
         otherOpts: ['dflt'],
         coerceFunction: function(v, propOut, dflt) {
-            propOut.set(getColorscale(v, dflt));
+            propOut.set(colorscales.get(v, dflt));
         }
     },
     angle: {
@@ -150,63 +173,35 @@ exports.valObjects = {
         requiredOpts: [],
         otherOpts: ['dflt'],
         coerceFunction: function(v, propOut, dflt) {
-            if(v==='auto') propOut.set('auto');
+            if(v === 'auto') propOut.set('auto');
             else if(!isNumeric(v)) propOut.set(dflt);
-            else {
-                if(Math.abs(v)>180) v -= Math.round(v/360)*360;
-                propOut.set(+v);
-            }
+            else propOut.set(modHalf(+v, 360));
         }
     },
-    axisid: {
+    subplotid: {
         description: [
-            'An axis id string (e.g. \'x\', \'x2\', \'x3\', ...).'
+            'An id string of a subplot type (given by dflt), optionally',
+            'followed by an integer >1. e.g. if dflt=\'geo\', we can have',
+            '\'geo\', \'geo2\', \'geo3\', ...'
         ].join(' '),
-        requiredOpts: [],
-        otherOpts: ['dflt'],
-        coerceFunction: function(v, propOut, dflt) {
-            if(typeof v === 'string' && v.charAt(0)===dflt) {
-                var axnum = Number(v.substr(1));
-                if(axnum%1 === 0 && axnum>1) {
-                    propOut.set(v);
-                    return;
-                }
+        requiredOpts: ['dflt'],
+        otherOpts: ['regex'],
+        coerceFunction: function(v, propOut, dflt, opts) {
+            var regex = opts.regex || counterRegex(dflt);
+            if(typeof v === 'string' && regex.test(v)) {
+                propOut.set(v);
+                return;
             }
             propOut.set(dflt);
-        }
-    },
-    sceneid: {
-        description: [
-            'A scene id string (e.g. \'scene\', \'scene2\', \'scene3\', ...).'
-        ].join(' '),
-        requiredOpts: [],
-        otherOpts: ['dflt'],
-        coerceFunction: function(v, propOut, dflt) {
-            if(typeof v === 'string' && v.substr(0,5)===dflt) {
-                var scenenum = Number(v.substr(5));
-                if(scenenum%1 === 0 && scenenum>1) {
-                    propOut.set(v);
-                    return;
-                }
-            }
-            propOut.set(dflt);
-        }
-    },
-    geoid: {
-        description: [
-            'A geo id string (e.g. \'geo\', \'geo2\', \'geo3\', ...).'
-        ].join(' '),
-        requiredOpts: [],
-        otherOpts: ['dflt'],
-        coerceFunction: function(v, propOut, dflt) {
-            if(typeof v === 'string' && v.substr(0,3)===dflt) {
-                var geonum = Number(v.substr(3));
-                if(geonum%1 === 0 && geonum>1) {
-                    propOut.set(v);
-                    return;
-                }
-            }
-            propOut.set(dflt);
+        },
+        validateFunction: function(v, opts) {
+            var dflt = opts.dflt;
+
+            if(v === dflt) return true;
+            if(typeof v !== 'string') return false;
+            if(counterRegex(dflt).test(v)) return true;
+
+            return false;
         }
     },
     flaglist: {
@@ -218,24 +213,23 @@ exports.valObjects = {
             'Values in `extras` cannot be combined.'
         ].join(' '),
         requiredOpts: ['flags'],
-        otherOpts: ['dflt', 'extras'],
+        otherOpts: ['dflt', 'extras', 'arrayOk'],
         coerceFunction: function(v, propOut, dflt, opts) {
             if(typeof v !== 'string') {
                 propOut.set(dflt);
                 return;
             }
-            if(opts.extras.indexOf(v)!==-1) {
+            if((opts.extras || []).indexOf(v) !== -1) {
                 propOut.set(v);
                 return;
             }
-            var vParts = v.split('+'),
-                i = 0;
-            while(i<vParts.length) {
+            var vParts = v.split('+');
+            var i = 0;
+            while(i < vParts.length) {
                 var vi = vParts[i];
-                if(opts.flags.indexOf(vi)===-1 || vParts.indexOf(vi)<i) {
-                    vParts.splice(i,1);
-                }
-                else i++;
+                if(opts.flags.indexOf(vi) === -1 || vParts.indexOf(vi) < i) {
+                    vParts.splice(i, 1);
+                } else i++;
             }
             if(!vParts.length) propOut.set(dflt);
             else propOut.set(vParts.join('+'));
@@ -244,9 +238,9 @@ exports.valObjects = {
     any: {
         description: 'Any type.',
         requiredOpts: [],
-        otherOpts: ['dflt'],
+        otherOpts: ['dflt', 'values', 'arrayOk'],
         coerceFunction: function(v, propOut, dflt) {
-            if(v===undefined) propOut.set(dflt);
+            if(v === undefined) propOut.set(dflt);
             else propOut.set(v);
         }
     },
@@ -255,22 +249,94 @@ exports.valObjects = {
             'An {array} of plot information.'
         ].join(' '),
         requiredOpts: ['items'],
-        otherOpts: ['dflt'],
+        // set `dimensions=2` for a 2D array or '1-2' for either
+        // `items` may be a single object instead of an array, in which case
+        // `freeLength` must be true.
+        // if `dimensions='1-2'` and items is a 1D array, then the value can
+        // either be a matching 1D array or an array of such matching 1D arrays
+        otherOpts: ['dflt', 'freeLength', 'dimensions'],
         coerceFunction: function(v, propOut, dflt, opts) {
+            // simplified coerce function just for array items
+            function coercePart(v, opts, dflt) {
+                var out;
+                var propPart = {set: function(v) { out = v; }};
+
+                if(dflt === undefined) dflt = opts.dflt;
+
+                exports.valObjectMeta[opts.valType].coerceFunction(v, propPart, dflt, opts);
+
+                return out;
+            }
+
+            var twoD = opts.dimensions === 2 || (opts.dimensions === '1-2' && Array.isArray(v) && Array.isArray(v[0]));
+
             if(!Array.isArray(v)) {
                 propOut.set(dflt);
                 return;
             }
 
-            var items = opts.items,
-                vOut = [];
+            var items = opts.items;
+            var vOut = [];
+            var arrayItems = Array.isArray(items);
+            var arrayItems2D = arrayItems && twoD && Array.isArray(items[0]);
+            var innerItemsOnly = twoD && arrayItems && !arrayItems2D;
+            var len = (arrayItems && !innerItemsOnly) ? items.length : v.length;
+
+            var i, j, row, item, len2, vNew;
+
             dflt = Array.isArray(dflt) ? dflt : [];
 
-            for(var i = 0; i < items.length; i++) {
-                exports.coerce(v, vOut, items, '[' + i + ']', dflt[i]);
+            if(twoD) {
+                for(i = 0; i < len; i++) {
+                    vOut[i] = [];
+                    row = Array.isArray(v[i]) ? v[i] : [];
+                    if(innerItemsOnly) len2 = items.length;
+                    else if(arrayItems) len2 = items[i].length;
+                    else len2 = row.length;
+
+                    for(j = 0; j < len2; j++) {
+                        if(innerItemsOnly) item = items[j];
+                        else if(arrayItems) item = items[i][j];
+                        else item = items;
+
+                        vNew = coercePart(row[j], item, (dflt[i] || [])[j]);
+                        if(vNew !== undefined) vOut[i][j] = vNew;
+                    }
+                }
+            } else {
+                for(i = 0; i < len; i++) {
+                    vNew = coercePart(v[i], arrayItems ? items[i] : items, dflt[i]);
+                    if(vNew !== undefined) vOut[i] = vNew;
+                }
             }
 
             propOut.set(vOut);
+        },
+        validateFunction: function(v, opts) {
+            if(!Array.isArray(v)) return false;
+
+            var items = opts.items;
+            var arrayItems = Array.isArray(items);
+            var twoD = opts.dimensions === 2;
+
+            // when free length is off, input and declared lengths must match
+            if(!opts.freeLength && v.length !== items.length) return false;
+
+            // valid when all input items are valid
+            for(var i = 0; i < v.length; i++) {
+                if(twoD) {
+                    if(!Array.isArray(v[i]) || (!opts.freeLength && v[i].length !== items[i].length)) {
+                        return false;
+                    }
+                    for(var j = 0; j < v[i].length; j++) {
+                        if(!validate(v[i][j], arrayItems ? items[i][j] : items)) {
+                            return false;
+                        }
+                    }
+                } else if(!validate(v[i], arrayItems ? items[i] : items)) return false;
+            }
+
+            return true;
         }
     }
 };
@@ -279,7 +345,7 @@ exports.valObjects = {
  * Ensures that container[attribute] has a valid value.
  *
  * attributes[attribute] is an object with possible keys:
- * - valType: data_array, enumerated, boolean, ... as in valObjects
+ * - valType: data_array, enumerated, boolean, ... as in valObjectMeta
  * - values: (enumerated only) array of allowed vals
  * - min, max: (number, integer only) inclusive bounds on allowed vals
  *      either or both may be omitted
@@ -288,12 +354,19 @@ exports.valObjects = {
  *      as a convenience, returns the value it finally set
  */
 exports.coerce = function(containerIn, containerOut, attributes, attribute, dflt) {
-    var opts = nestedProperty(attributes, attribute).get(),
-        propIn = nestedProperty(containerIn, attribute),
-        propOut = nestedProperty(containerOut, attribute),
-        v = propIn.get();
+    var opts = nestedProperty(attributes, attribute).get();
+    var propIn = nestedProperty(containerIn, attribute);
+    var propOut = nestedProperty(containerOut, attribute);
+    var v = propIn.get();
 
-    if(dflt===undefined) dflt = opts.dflt;
+    var template = containerOut._template;
+    if(v === undefined && template) {
+        v = nestedProperty(template, attribute).get();
+        // already used the template value, so short-circuit the second check
+        template = 0;
+    }
+
+    if(dflt === undefined) dflt = opts.dflt;
 
     /**
      * arrayOk: value MAY be an array, then we do no value checking
@@ -301,14 +374,23 @@ exports.coerce = function(containerIn, containerOut, attributes, attribute, dflt
      * individual form (eg. some array vals can be numbers, even if the
      * single values must be color strings)
      */
-    if(opts.arrayOk && Array.isArray(v)) {
+    if(opts.arrayOk && isArrayOrTypedArray(v)) {
         propOut.set(v);
         return v;
     }
 
-    exports.valObjects[opts.valType].coerceFunction(v, propOut, dflt, opts);
+    var coerceFunction = exports.valObjectMeta[opts.valType].coerceFunction;
+    coerceFunction(v, propOut, dflt, opts);
 
-    return propOut.get();
+    var out = propOut.get();
+    // in case v was provided but invalid, try the template again so it still
+    // overrides the regular default
+    if(template && out === dflt && !validate(v, opts)) {
+        v = nestedProperty(template, attribute).get();
+        coerceFunction(v, propOut, dflt, opts);
+        out = propOut.get();
+    }
+    return out;
 };
 
 /**
@@ -319,10 +401,11 @@ exports.coerce = function(containerIn, containerOut, attributes, attribute, dflt
  * returns false if there is no user input.
  */
 exports.coerce2 = function(containerIn, containerOut, attributes, attribute, dflt) {
-    var propIn = nestedProperty(containerIn, attribute),
-        propOut = exports.coerce(containerIn, containerOut, attributes, attribute, dflt);
+    var propIn = nestedProperty(containerIn, attribute);
+    var propOut = exports.coerce(containerIn, containerOut, attributes, attribute, dflt);
+    var valIn = propIn.get();
 
-    return propIn.get() ? propOut : false;
+    return (valIn !== undefined && valIn !== null) ? propOut : false;
 };
 
 /*
@@ -341,3 +424,115 @@ exports.coerceFont = function(coerce, attr, dfltObj) {
 
     return out;
 };
+
+/*
+ * Shortcut to coerce the pattern attributes
+ */
+exports.coercePattern = function(coerce, attr, markerColor, hasMarkerColorscale) {
+    var shape = coerce(attr + '.shape');
+    if(shape) {
+        coerce(attr + '.solidity');
+        coerce(attr + '.size');
+        var fillmode = coerce(attr + '.fillmode');
+        var isOverlay = fillmode === 'overlay';
+
+        if(!hasMarkerColorscale) {
+            var bgcolor = coerce(attr + '.bgcolor', isOverlay ?
+                markerColor :
+                undefined
+            );
+
+            coerce(attr + '.fgcolor', isOverlay ?
+                Color.contrast(bgcolor) :
+                markerColor
+            );
+        }
+
+        coerce(attr + '.fgopacity', isOverlay ?
+            0.5 :
+            1
+        );
+    }
+};
+
+/** Coerce shortcut for 'hoverinfo'
+ * handling 1-vs-multi-trace dflt logic
+ *
+ * @param {object} traceIn : user trace object
+ * @param {object} traceOut : full trace object (requires _module ref)
+ * @param {object} layoutOut : full layout object (require _dataLength ref)
+ * @return {any} : the coerced value
+ */
+exports.coerceHoverinfo = function(traceIn, traceOut, layoutOut) {
+    var moduleAttrs = traceOut._module.attributes;
+    var attrs = moduleAttrs.hoverinfo ? moduleAttrs : baseTraceAttrs;
+
+    var valObj = attrs.hoverinfo;
+    var dflt;
+
+    if(layoutOut._dataLength === 1) {
+        var flags = valObj.dflt === 'all' ?
+            valObj.flags.slice() :
+            valObj.dflt.split('+');
+
+        flags.splice(flags.indexOf('name'), 1);
+        dflt = flags.join('+');
+    }
+
+    return exports.coerce(traceIn, traceOut, attrs, 'hoverinfo', dflt);
+};
+
+/** Coerce shortcut for [un]selected.marker.opacity,
+ *  which has special default logic, to ensure that it corresponds to the
+ *  default selection behavior while allowing to be overtaken by any other
+ *  [un]selected attribute.
+ *
+ *  N.B. This must be called *after* coercing all the other [un]selected attrs,
+ *  to give the intended result.
+ *
+ * @param {object} traceOut : fullData item
+ * @param {function} coerce : lib.coerce wrapper with implied first three arguments
+ */
+exports.coerceSelectionMarkerOpacity = function(traceOut, coerce) {
+    if(!traceOut.marker) return;
+
+    var mo = traceOut.marker.opacity;
+    // you can still have a `marker` container with no markers if there's text
+    if(mo === undefined) return;
+
+    var smoDflt;
+    var usmoDflt;
+
+    // Don't give [un]selected.marker.opacity a default value if
+    // marker.opacity is an array: handle this during style step.
+    //
+    // Only give [un]selected.marker.opacity a default value if you don't
+    // set any other [un]selected attributes.
+    if(!isArrayOrTypedArray(mo) && !traceOut.selected && !traceOut.unselected) {
+        smoDflt = mo;
+        usmoDflt = DESELECTDIM * mo;
+    }
+
+    coerce('selected.marker.opacity', smoDflt);
+    coerce('unselected.marker.opacity', usmoDflt);
+};
+
+function validate(value, opts) {
+    var valObjectDef = exports.valObjectMeta[opts.valType];
+
+    if(opts.arrayOk && isArrayOrTypedArray(value)) return true;
+
+    if(valObjectDef.validateFunction) {
+        return valObjectDef.validateFunction(value, opts);
+    }
+
+    var failed = {};
+    var out = failed;
+    var propMock = { set: function(v) { out = v; } };
+
+    // 'failed' just something mutable that won't be === anything else
+
+    valObjectDef.coerceFunction(value, propMock, failed, opts);
+    return out !== failed;
+}
+exports.validate = validate;

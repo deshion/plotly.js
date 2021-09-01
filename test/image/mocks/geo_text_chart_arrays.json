@@ -97,11 +97,11 @@
                 ],
                 "family": [
                     "Arial, sans-serif",
-                    "Balto, sans-serif",
+                    "Roboto, sans-serif",
                     "Courier New, monospace",
-                    "Droid Sans, sans-serif",
-                    "Droid Serif, serif",
-                    "Droid Sans Mono, sans-serif",
+                    "Noto Sans, sans-serif",
+                    "Noto Serif, serif",
+                    "Noto Sans Mono, sans-serif",
                     "Gravitas One, cursive",
                     "Old Standard TT, serif",
                     "Open Sans, sans-serif",
@@ -109,16 +109,17 @@
                     "Raleway, sans-serif",
                     "Times New Roman, Times, serif"
                 ]
-            },
-            "uid": "2db7c3"
+            }
         }
     ],
     "layout": {
-        "title": "Canadian cities",
-        "font": {},
-        "titlefont": {
-            "size": 28
+        "title": {
+            "text": "Canadian cities",
+            "font": {
+                "size": 28
+            }
         },
+        "font": {},
         "geo": {
             "scope": "north america",
             "lonaxis": {
@@ -132,6 +133,9 @@
                     40,
                     70
                 ]
+            },
+            "center": {
+                "lat": 57
             }
         },
         "width": 800,

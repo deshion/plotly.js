@@ -1,18 +1,9 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
-var Plotly = require('../../plotly');
+var Registry = require('../../registry');
 var Lib = require('../../lib');
+var colorscaleDefaults = require('../../components/colorscale/defaults');
 var attributes = require('./attributes');
-
 
 module.exports = function supplyDefaults(traceIn, traceOut, defaultColor, layout) {
     function coerce(attr, dflt) {
@@ -24,7 +15,7 @@ module.exports = function supplyDefaults(traceIn, traceOut, defaultColor, layout
         var ret = array.map(function(attr) {
             var result = coerce(attr);
 
-            if(result && Array.isArray(result)) return result;
+            if(result && Lib.isArrayOrTypedArray(result)) return result;
             return null;
         });
 
@@ -34,56 +25,70 @@ module.exports = function supplyDefaults(traceIn, traceOut, defaultColor, layout
     }
 
     var coords = readComponents(['x', 'y', 'z']);
-    var indices = readComponents(['i', 'j', 'k']);
-
     if(!coords) {
         traceOut.visible = false;
         return;
     }
 
-    if(indices) {
-        // otherwise, convert all face indices to ints
-        indices.forEach(function(index) {
-            for(var i = 0; i < index.length; ++i) index[i] |= 0;
-        });
+    readComponents(['i', 'j', 'k']);
+    // three indices should be all provided or not
+    if(
+        (traceOut.i && (!traceOut.j || !traceOut.k)) ||
+        (traceOut.j && (!traceOut.k || !traceOut.i)) ||
+        (traceOut.k && (!traceOut.i || !traceOut.j))
+    ) {
+        traceOut.visible = false;
+        return;
     }
 
-    //Coerce remaining properties
-    ['lighting.ambient',
+    var handleCalendarDefaults = Registry.getComponentMethod('calendars', 'handleTraceDefaults');
+    handleCalendarDefaults(traceIn, traceOut, ['x', 'y', 'z'], layout);
+
+    // Coerce remaining properties
+    [
+        'lighting.ambient',
         'lighting.diffuse',
         'lighting.specular',
         'lighting.roughness',
         'lighting.fresnel',
-        'contour.show',
-        'contour.color',
-        'contour.width',
-        'colorscale',
-        'reversescale',
+        'lighting.vertexnormalsepsilon',
+        'lighting.facenormalsepsilon',
+        'lightposition.x',
+        'lightposition.y',
+        'lightposition.z',
         'flatshading',
         'alphahull',
         'delaunayaxis',
         'opacity'
     ].forEach(function(x) { coerce(x); });
 
+    var showContour = coerce('contour.show');
+    if(showContour) {
+        coerce('contour.color');
+        coerce('contour.width');
+    }
+
     if('intensity' in traceIn) {
         coerce('intensity');
-        coerce('showscale', true);
-    }
-    else {
+        coerce('intensitymode');
+        colorscaleDefaults(traceIn, traceOut, layout, coerce, {prefix: '', cLetter: 'c'});
+    } else {
         traceOut.showscale = false;
 
-        if('vertexColor' in traceIn) coerce('vertexColor');
-        else if('faceColor' in traceIn) coerce('faceColor');
+        if('facecolor' in traceIn) coerce('facecolor');
+        else if('vertexcolor' in traceIn) coerce('vertexcolor');
         else coerce('color', defaultColor);
     }
 
-    if(traceOut.reversescale) {
-        traceOut.colorscale = traceOut.colorscale.map(function(si) {
-            return [1 - si[0], si[1]];
-        }).reverse();
-    }
+    coerce('text');
+    coerce('hovertext');
+    coerce('hovertemplate');
+    coerce('xhoverformat');
+    coerce('yhoverformat');
+    coerce('zhoverformat');
 
-    if(traceOut.showscale) {
-        Plotly.Colorbar.supplyDefaults(traceIn, traceOut, layout);
-    }
+    // disable 1D transforms
+    // x/y/z should match lengths, and i/j/k should match as well, but
+    // the two sets have different lengths so transforms wouldn't work.
+    traceOut._length = null;
 };

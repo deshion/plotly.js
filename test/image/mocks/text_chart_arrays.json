@@ -12,15 +12,15 @@
                 1
             ],
             "mode": "lines+markers+text",
-            "name": "Lines, Markers and Text",
+            "name": "Lines,\nMarkers\rand\r\nText",
             "text": [
-                "Text A",
-                "Text B",
-                "Text C"
+                "Text\nA",
+                "Text\rB",
+                "Text\r\nC"
             ],
             "textfont": {
                 "family": [
-                    "Droid Sans, sans-serif",
+                    "Noto Sans, sans-serif",
                     "Old Standard TT, serif",
                     "PT Sans Narrow, sans-serif"
                 ],
@@ -40,8 +40,12 @@
                 "top left",
                 "top left"
             ],
-            "type": "scatter",
-            "uid": "459c77"
+            "hovertext": [
+                "Hover text\nA",
+                "Hover text\rB",
+                "Hover text\r\nC"
+            ],
+            "type": "scatter"
         },
         {
             "x": [
@@ -54,7 +58,7 @@
                 2,
                 2
             ],
-            "mode": "lines+markers+text",
+            "mode": "lines+text",
             "name": "Lines and Text",
             "text": [
                 "Text G",
@@ -63,7 +67,7 @@
             ],
             "textfont": {
                 "family": [
-                    "Droid Sans Mono, sans-serif",
+                    "Noto Sans Mono, sans-serif",
                     "Raleway, sans-serif",
                     "Times New Roman, Times, serif"
                 ],
@@ -83,8 +87,12 @@
                 "bottom left",
                 "bottom left"
             ],
-            "type": "scatter",
-            "uid": "f8361c"
+            "hovertext": [
+                "Hover text G",
+                "Hover text H",
+                "Hover text I"
+            ],
+            "type": "scatter"
         },
         {
             "x": [
@@ -103,6 +111,11 @@
                 "a",
                 "",
                 "b"
+            ],
+            "hovertext": [
+                "a (hover)",
+                "",
+                "b (hover)"
             ]
         }
     ],

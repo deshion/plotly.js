@@ -17,36 +17,10 @@
         "2"
       ],
       "name": "Col3",
-      "type": "scatter3d",
-      "xsrc": ":d354e6",
-      "ysrc": ":36e26a",
-      "zsrc": ":3f1571",
-      "uid": "a94e2c"
+      "type": "scatter3d"
     }
   ],
   "layout": {
-    "yaxis": {
-      "type": "linear",
-      "ticks": "outside",
-      "ticklen": 10,
-      "tickwidth": 5.3,
-      "tickcolor": "rgb(214, 39, 40)",
-      "showline": true,
-      "mirror": "ticks",
-      "linecolor": "rgb(0, 255, 0)",
-      "linewidth": 4.2
-    },
-    "xaxis": {
-      "type": "linear",
-      "ticks": "outside",
-      "ticklen": 10,
-      "tickwidth": 5.3,
-      "tickcolor": "rgb(214, 39, 40)",
-      "showline": true,
-      "mirror": "ticks",
-      "linecolor": "rgb(0, 255, 0)",
-      "linewidth": 4.2
-    },
     "scene": {
       "xaxis": {
         "type": "linear",

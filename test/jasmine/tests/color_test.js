@@ -1,4 +1,4 @@
-var Plotly = require('@src/plotly');
+var Color = require('@src/components/color');
 
 
 describe('Test color:', function() {
@@ -15,7 +15,7 @@ describe('Test color:', function() {
                 rgbacolor: 'rgba(51, 102, 153, 0.8)'
             };
 
-            Plotly.Color.clean(container);
+            Color.clean(container);
             expect(container).toEqual(expectedContainer);
         });
 
@@ -51,7 +51,7 @@ describe('Test color:', function() {
                 ]
             };
 
-            Plotly.Color.clean(container);
+            Color.clean(container);
             expect(container).toEqual(expectedContainer);
         });
 
@@ -70,7 +70,7 @@ describe('Test color:', function() {
                 fractionrgbacolor: 'rgba(0, 102, 204, 1)'
             };
 
-            Plotly.Color.clean(container);
+            Color.clean(container);
             expect(container).toEqual(expectedContainer);
         });
 
@@ -86,7 +86,7 @@ describe('Test color:', function() {
                 rgbacolor: 'rgba(51, 102, 153, 0.8)'
             };
 
-            Plotly.Color.clean(container);
+            Color.clean(container);
             expect(container).toEqual(expectedContainer);
         });
 
@@ -102,7 +102,7 @@ describe('Test color:', function() {
                 rgba2color: 'rgba(26, 51, 128, 1)'
             };
 
-            Plotly.Color.clean(container);
+            Color.clean(container);
             expect(container).toEqual(expectedContainer);
         });
 
@@ -117,7 +117,7 @@ describe('Test color:', function() {
             var expectedContainer = {};
             Object.keys(container).forEach(function(k) { expectedContainer[k] = container[k]; });
 
-            Plotly.Color.clean(container);
+            Color.clean(container);
             expect(container).toEqual(expectedContainer);
         });
 
@@ -125,7 +125,7 @@ describe('Test color:', function() {
             var container1 = null;
             var expectedContainer1 = null;
 
-            Plotly.Color.clean(container1);
+            Color.clean(container1);
             expect(container1).toEqual(expectedContainer1);
 
             var container2 = {
@@ -141,8 +141,54 @@ describe('Test color:', function() {
                 anarray: [null, {color: 'rgb(0.1, 0.1, 0.1)'}]
             };
 
-            Plotly.Color.clean(container2);
+            Color.clean(container2);
             expect(container2).toEqual(expectedContainer2);
+        });
+    });
+
+    describe('fill', function() {
+        it('should call style with both fill and fill-opacity', function() {
+            var mockElement = {
+                style: function(object) {
+                    expect(object.fill).toBe('rgb(255, 255, 0)');
+                    expect(object['fill-opacity']).toBe(0.5);
+                }
+            };
+
+            Color.fill(mockElement, 'rgba(255,255,0,0.5');
+        });
+    });
+
+    describe('stroke', function() {
+        it('should call style with both fill and fill-opacity', function() {
+            var mockElement = {
+                style: function(object) {
+                    expect(object.stroke).toBe('rgb(255, 255, 0)');
+                    expect(object['stroke-opacity']).toBe(0.5);
+                }
+            };
+
+            Color.stroke(mockElement, 'rgba(255,255,0,0.5');
+        });
+    });
+
+    describe('contrast', function() {
+        it('should darken light colors', function() {
+            var out = Color.contrast('#eee', 10, 20);
+
+            expect(out).toEqual('#bbbbbb');
+        });
+
+        it('should darken light colors (2)', function() {
+            var out = Color.contrast('#fdae61', 10, 20);
+
+            expect(out).toEqual('#f57a03');
+        });
+
+        it('should lighten dark colors', function() {
+            var out = Color.contrast('#2b83ba', 10, 20);
+
+            expect(out).toEqual('#449dd4');
         });
     });
 });

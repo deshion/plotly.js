@@ -100,7 +100,6 @@
                 "x": 1,
                 "y": 0.5
             },
-            "uid": "22fe55",
             "zmin": 4.564835,
             "zmax": 5.548783,
             "contours": {
@@ -215,7 +214,6 @@
                 "x": 1.1,
                 "y": 0.5
             },
-            "uid": "a0bc92",
             "zmin": 4.564835,
             "zmax": 5.548783,
             "contours": {
@@ -229,7 +227,7 @@
     ],
     "layout": {
         "autosize": true,
-        "title": "transposing irregular contour data",
+        "title": {"text": "transposing irregular contour data"},
         "xaxis": {
             "domain": [
                 0,

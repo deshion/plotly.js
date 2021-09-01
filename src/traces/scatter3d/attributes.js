@@ -1,27 +1,36 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
 var scatterAttrs = require('../scatter/attributes');
-var MARKER_SYMBOLS = require('../../constants/gl_markers');
-var extendFlat = require('../../lib/extend').extendFlat;
+var colorAttributes = require('../../components/colorscale/attributes');
+var axisHoverFormat = require('../../plots/cartesian/axis_format_attributes').axisHoverFormat;
+var hovertemplateAttrs = require('../../plots/template_attributes').hovertemplateAttrs;
+var texttemplateAttrs = require('../../plots/template_attributes').texttemplateAttrs;
+var baseAttrs = require('../../plots/attributes');
+var DASHES = require('../../constants/gl3d_dashes');
 
-var scatterLineAttrs = scatterAttrs.line,
-    scatterMarkerAttrs = scatterAttrs.marker,
-    scatterMarkerLineAttrs = scatterMarkerAttrs.line;
+var MARKER_SYMBOLS = require('../../constants/gl3d_markers');
+var extendFlat = require('../../lib/extend').extendFlat;
+var overrideAll = require('../../plot_api/edit_types').overrideAll;
+var sortObjectKeys = require('../../lib/sort_object_keys');
+
+var scatterLineAttrs = scatterAttrs.line;
+var scatterMarkerAttrs = scatterAttrs.marker;
+var scatterMarkerLineAttrs = scatterMarkerAttrs.line;
+
+var lineAttrs = extendFlat({
+    width: scatterLineAttrs.width,
+    dash: {
+        valType: 'enumerated',
+        values: sortObjectKeys(DASHES),
+        dflt: 'solid',
+        description: 'Sets the dash style of the lines.'
+    }
+}, colorAttributes('line'));
 
 function makeProjectionAttr(axLetter) {
     return {
         show: {
             valType: 'boolean',
-            role: 'info',
             dflt: false,
             description: [
                 'Sets whether or not projections are shown along the',
@@ -30,7 +39,6 @@ function makeProjectionAttr(axLetter) {
         },
         opacity: {
             valType: 'number',
-            role: 'style',
             min: 0,
             max: 1,
             dflt: 1,
@@ -38,10 +46,9 @@ function makeProjectionAttr(axLetter) {
         },
         scale: {
             valType: 'number',
-            role: 'style',
             min: 0,
             max: 10,
-            dflt: 2/3,
+            dflt: 2 / 3,
             description: [
                 'Sets the scale factor determining the size of the',
                 'projection marker points.'
@@ -50,33 +57,48 @@ function makeProjectionAttr(axLetter) {
     };
 }
 
-module.exports = {
-    x: {
-        valType: 'data_array',
-        description: 'Sets the x coordinates.'
-    },
-    y: {
-        valType: 'data_array',
-        description: 'Sets the y coordinates.'
-    },
+var attrs = module.exports = overrideAll({
+    x: scatterAttrs.x,
+    y: scatterAttrs.y,
     z: {
         valType: 'data_array',
         description: 'Sets the z coordinates.'
     },
+
     text: extendFlat({}, scatterAttrs.text, {
         description: [
             'Sets text elements associated with each (x,y,z) triplet.',
             'If a single string, the same string appears over',
             'all the data points.',
             'If an array of string, the items are mapped in order to the',
-            'this trace\'s (x,y,z) coordinates.'
+            'this trace\'s (x,y,z) coordinates.',
+            'If trace `hoverinfo` contains a *text* flag and *hovertext* is not set,',
+            'these elements will be seen in the hover labels.'
         ].join(' ')
     }),
+    texttemplate: texttemplateAttrs({}, {
+
+    }),
+    hovertext: extendFlat({}, scatterAttrs.hovertext, {
+        description: [
+            'Sets text elements associated with each (x,y,z) triplet.',
+            'If a single string, the same string appears over',
+            'all the data points.',
+            'If an array of string, the items are mapped in order to the',
+            'this trace\'s (x,y,z) coordinates.',
+            'To be seen, trace `hoverinfo` must contain a *text* flag.'
+        ].join(' ')
+    }),
+    hovertemplate: hovertemplateAttrs(),
+
+    xhoverformat: axisHoverFormat('x'),
+    yhoverformat: axisHoverFormat('y'),
+    zhoverformat: axisHoverFormat('z'),
+
     mode: extendFlat({}, scatterAttrs.mode,  // shouldn't this be on-par with 2D?
         {dflt: 'lines+markers'}),
     surfaceaxis: {
         valType: 'enumerated',
-        role: 'info',
         values: [-1, 0, 1, 2],
         dflt: -1,
         description: [
@@ -87,7 +109,6 @@ module.exports = {
     },
     surfacecolor: {
         valType: 'color',
-        role: 'style',
         description: 'Sets the surface fill color.'
     },
     projection: {
@@ -95,17 +116,14 @@ module.exports = {
         y: makeProjectionAttr('y'),
         z: makeProjectionAttr('z')
     },
-    line: {
-        color: scatterLineAttrs.color,
-        width: scatterLineAttrs.width,
-        dash: scatterLineAttrs.dash
-    },
-    marker: {  // Parity with scatter.js?
-        color: scatterMarkerAttrs.color,
+
+    connectgaps: scatterAttrs.connectgaps,
+    line: lineAttrs,
+
+    marker: extendFlat({  // Parity with scatter.js?
         symbol: {
             valType: 'enumerated',
-            values: Object.keys(MARKER_SYMBOLS),
-            role: 'style',
+            values: sortObjectKeys(MARKER_SYMBOLS),
             dflt: 'circle',
             arrayOk: true,
             description: 'Sets the marker symbol type.'
@@ -125,30 +143,25 @@ module.exports = {
                 'to an rgba color and use its alpha channel.'
             ].join(' ')
         }),
-        colorscale: scatterMarkerAttrs.colorscale,
-        cauto: scatterMarkerAttrs.cauto,
-        cmax: scatterMarkerAttrs.cmax,
-        cmin: scatterMarkerAttrs.cmin,
-        autocolorscale: scatterMarkerAttrs.autocolorscale,
-        reversescale: scatterMarkerAttrs.reversescale,
-        showscale: scatterMarkerAttrs.showscale,
-        line: {
-            color: scatterMarkerLineAttrs.color,
-            width: extendFlat({}, scatterMarkerLineAttrs.width, {arrayOk: false}),
-            colorscale: scatterMarkerLineAttrs.colorscale,
-            cauto: scatterMarkerLineAttrs.cauto,
-            cmax: scatterMarkerLineAttrs.cmax,
-            cmin: scatterMarkerLineAttrs.cmin,
-            autocolorscale: scatterMarkerLineAttrs.autocolorscale,
-            reversescale: scatterMarkerLineAttrs.reversescale
-        }
+        colorbar: scatterMarkerAttrs.colorbar,
+
+        line: extendFlat({
+            width: extendFlat({}, scatterMarkerLineAttrs.width, {arrayOk: false})
+        },
+            colorAttributes('marker.line')
+        )
     },
+        colorAttributes('marker')
+    ),
+
     textposition: extendFlat({}, scatterAttrs.textposition, {dflt: 'top center'}),
-    textfont: scatterAttrs.textfont,
-    _nestedModules: {
-        'error_x': 'ErrorBars',
-        'error_y': 'ErrorBars',
-        'error_z': 'ErrorBars',
-        'marker.colorbar': 'Colorbar'
-    }
-};
+    textfont: {
+        color: scatterAttrs.textfont.color,
+        size: scatterAttrs.textfont.size,
+        family: extendFlat({}, scatterAttrs.textfont.family, {arrayOk: false})
+    },
+
+    hoverinfo: extendFlat({}, baseAttrs.hoverinfo)
+}, 'calc', 'nested');
+
+attrs.x.editType = attrs.y.editType = attrs.z.editType = 'calc+clearAxisTypes';

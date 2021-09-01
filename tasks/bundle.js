@@ -1,75 +1,67 @@
-var fs = require('fs');
+var runSeries = require('run-series');
+var prependFile = require('prepend-file');
 
-var browserify = require('browserify');
-var UglifyJS = require('uglify-js');
-
-var compressAttributes = require('./util/compress_attributes');
 var constants = require('./util/constants');
+var common = require('./util/common');
+var _bundle = require('./util/browserify_wrapper');
 
-/*
- * This script takes one argument
- *
- * Run `npm run build -- dev` or `npm run build -- --dev`
- * to include source map in the plotly.js bundle
- *
- * N.B. This script is meant for dist builds; the output bundles are placed
- *      in plotly.js/dist/.
- *      Use `npm run watch` for dev builds.
- */
+var header = constants.licenseDist + '\n';
+var pathToPlotlyDist = constants.pathToPlotlyDist;
+var pathToPlotlyIndex = constants.pathToPlotlyIndex;
+var pathToPlotlyDistMin = constants.pathToPlotlyDistMin;
+var pathToPlotlyDistWithMeta = constants.pathToPlotlyDistWithMeta;
+var pathToPlotlyGeoAssetsSrc = constants.pathToPlotlyGeoAssetsSrc;
+var pathToPlotlyGeoAssetsDist = constants.pathToPlotlyGeoAssetsDist;
 
-var arg = process.argv[2];
-var DEV = (arg === 'dev') || (arg === '--dev');
-
-
-// Check if style and font build files are there
-try {
-    fs.statSync(constants.pathToCSSBuild).isFile();
-    fs.statSync(constants.pathToFontSVGBuild).isFile();
-}
-catch(e) {
+// Check if style build file is there
+var doesFileExist = common.doesFileExist;
+if(!doesFileExist(constants.pathToCSSBuild)) {
     throw new Error([
-        'build/ is missing a or more files',
+        'build/plotcss.js is missing',
         'Please run `npm run preprocess` first'
     ].join('\n'));
 }
 
+// list of tasks to pass to run-series to not blow up
+// memory consumption.
+var tasks = [];
 
 // Browserify plotly.js
-browserify(constants.pathToPlotlyIndex, {
-    debug: DEV,
-    standalone: 'Plotly',
-    transform: [compressAttributes]
-})
-.bundle(function(err, buf) {
-    if(err) throw err;
+tasks.push(function(done) {
+    _bundle(pathToPlotlyIndex, pathToPlotlyDist, {
+        standalone: 'Plotly',
+        pathToMinBundle: pathToPlotlyDistMin
+    }, function() {
+        prependFile(pathToPlotlyDist, header, common.throwOnError);
+        prependFile(pathToPlotlyDistMin, header, common.throwOnError);
 
-    // generate plotly.min.js
-    if(!DEV) {
-        fs.writeFile(
-            constants.pathToPlotlyDistMin,
-            UglifyJS.minify(buf.toString(), constants.uglifyOptions).code
-        );
-    }
-})
-.pipe(fs.createWriteStream(constants.pathToPlotlyDist));
-
+        done();
+    });
+});
 
 // Browserify the geo assets
-browserify(constants.pathToPlotlyGeoAssetsSrc, {
-    standalone: 'PlotlyGeoAssets'
-})
-.bundle(function(err) {
-    if(err) throw err;
-})
-.pipe(fs.createWriteStream(constants.pathToPlotlyGeoAssetsDist));
+tasks.push(function(done) {
+    _bundle(pathToPlotlyGeoAssetsSrc, pathToPlotlyGeoAssetsDist, {
+        standalone: 'PlotlyGeoAssets'
+    }, function() {
+        prependFile(pathToPlotlyGeoAssetsDist, header, common.throwOnError);
 
+        done();
+    });
+});
 
-// Browserify the plotly.js with meta
-browserify(constants.pathToPlotlyIndex, {
-    debug: DEV,
-    standalone: 'Plotly'
-})
-.bundle(function(err) {
+// Browserify plotly.js with meta
+tasks.push(function(done) {
+    _bundle(pathToPlotlyIndex, pathToPlotlyDistWithMeta, {
+        standalone: 'Plotly',
+        noCompress: true
+    }, function() {
+        prependFile(pathToPlotlyDistWithMeta, header, common.throwOnError);
+
+        done();
+    });
+});
+
+runSeries(tasks, function(err) {
     if(err) throw err;
-})
-.pipe(fs.createWriteStream(constants.pathToPlotlyDistWithMeta));
+});

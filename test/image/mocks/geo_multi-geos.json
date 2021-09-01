@@ -13,8 +13,7 @@
                 0,
                 45,
                 -30
-            ],
-            "uid": "3bbd0c"
+            ]
         },
         {
             "type": "scattergeo",
@@ -29,12 +28,11 @@
                 60
             ],
             "mode": "lines",
-            "geo": "geo2",
-            "uid": "daaba4"
+            "geo": "geo2"
         }
     ],
     "layout": {
-        "title": "MULTI GEOS",
+        "title": {"text": "MULTI GEOS"},
         "height": 450,
         "width": 1000,
         "autosize": true,

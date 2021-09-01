@@ -1,50 +1,52 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
 var isNumeric = require('fast-isnumeric');
+var Lib = require('../../lib');
 
-var hasColumns = require('./has_columns');
+var Registry = require('../../registry');
 
-
-module.exports = function handleXYZDefaults(traceIn, traceOut, coerce) {
+module.exports = function handleXYZDefaults(traceIn, traceOut, coerce, layout, xName, yName) {
     var z = coerce('z');
+    xName = xName || 'x';
+    yName = yName || 'y';
     var x, y;
 
-    if(z===undefined || !z.length) return 0;
+    if(z === undefined || !z.length) return 0;
 
-    if(hasColumns(traceIn)) {
-        x = coerce('x');
-        y = coerce('y');
+    if(Lib.isArray1D(traceIn.z)) {
+        x = coerce(xName);
+        y = coerce(yName);
 
-        // column z must be accompanied by 'x' and 'y' arrays
-        if(!x || !y) return 0;
-    }
-    else {
-        x = coordDefaults('x', coerce);
-        y = coordDefaults('y', coerce);
+        var xlen = Lib.minRowLength(x);
+        var ylen = Lib.minRowLength(y);
+
+        // column z must be accompanied by xName and yName arrays
+        if(xlen === 0 || ylen === 0) return 0;
+
+        traceOut._length = Math.min(xlen, ylen, z.length);
+    } else {
+        x = coordDefaults(xName, coerce);
+        y = coordDefaults(yName, coerce);
 
         // TODO put z validation elsewhere
         if(!isValidZ(z)) return 0;
 
         coerce('transpose');
+
+        traceOut._length = null;
     }
 
-    return traceOut.z.length;
+    if(traceIn.type === 'heatmapgl') return true; // skip calendars until we handle them in those traces
+
+    var handleCalendarDefaults = Registry.getComponentMethod('calendars', 'handleTraceDefaults');
+    handleCalendarDefaults(traceIn, traceOut, [xName, yName], layout);
+
+    return true;
 };
 
 function coordDefaults(coordStr, coerce) {
-    var coord = coerce(coordStr),
-        coordType = coord ?
-            coerce(coordStr + 'type', 'array') :
-            'scaled';
+    var coord = coerce(coordStr);
+    var coordType = coord ? coerce(coordStr + 'type', 'array') : 'scaled';
 
     if(coordType === 'scaled') {
         coerce(coordStr + '0');
@@ -55,10 +57,10 @@ function coordDefaults(coordStr, coerce) {
 }
 
 function isValidZ(z) {
-    var allRowsAreArrays = true,
-        oneRowIsFilled = false,
-        hasOneNumber = false,
-        zi;
+    var allRowsAreArrays = true;
+    var oneRowIsFilled = false;
+    var hasOneNumber = false;
+    var zi;
 
     /*
      * Without this step:
@@ -70,7 +72,7 @@ function isValidZ(z) {
 
     for(var i = 0; i < z.length; i++) {
         zi = z[i];
-        if(!Array.isArray(zi)) {
+        if(!Lib.isArrayOrTypedArray(zi)) {
             allRowsAreArrays = false;
             break;
         }

@@ -1,15 +1,6 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
-var d3 = require('d3');
+var d3 = require('@plotly/d3');
 var isNumeric = require('fast-isnumeric');
 
 var NOTEDATA = [];
@@ -27,8 +18,8 @@ module.exports = function(text, displayLength) {
     NOTEDATA.push(text);
 
     var ts = 1000;
-    if (isNumeric(displayLength)) ts = displayLength;
-    else if (displayLength === 'long') ts = 3000;
+    if(isNumeric(displayLength)) ts = displayLength;
+    else if(displayLength === 'long') ts = 3000;
 
     var notifierContainer = d3.select('body')
         .selectAll('.plotly-notifier')
@@ -63,13 +54,24 @@ module.exports = function(text, displayLength) {
                     note.transition().call(killNote);
                 });
 
-            note.append('p').html(thisText);
+            var p = note.append('p');
+            var lines = thisText.split(/<br\s*\/?>/g);
+            for(var i = 0; i < lines.length; i++) {
+                if(i) p.append('br');
+                p.append('span').text(lines[i]);
+            }
 
-            note.transition()
-                    .duration(700)
-                    .style('opacity', 1)
-                .transition()
-                    .delay(ts)
-                    .call(killNote);
+            if(displayLength === 'stick') {
+                note.transition()
+                        .duration(350)
+                        .style('opacity', 1);
+            } else {
+                note.transition()
+                        .duration(700)
+                        .style('opacity', 1)
+                    .transition()
+                        .delay(ts)
+                        .call(killNote);
+            }
         });
 };

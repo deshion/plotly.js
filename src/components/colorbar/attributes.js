@@ -1,23 +1,15 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
 'use strict';
 
 var axesAttrs = require('../../plots/cartesian/layout_attributes');
 var fontAttrs = require('../../plots/font_attributes');
 var extendFlat = require('../../lib/extend').extendFlat;
+var overrideAll = require('../../plot_api/edit_types').overrideAll;
 
 
-module.exports = {
+module.exports = overrideAll({
 // TODO: only right is supported currently
 //     orient: {
 //         valType: 'enumerated',
-//         role: 'info',
 //         values: ['left', 'right', 'top', 'bottom'],
 //         dflt: 'right',
 //         description: [
@@ -28,7 +20,6 @@ module.exports = {
     thicknessmode: {
         valType: 'enumerated',
         values: ['fraction', 'pixels'],
-        role: 'style',
         dflt: 'pixels',
         description: [
             'Determines whether this color bar\'s thickness',
@@ -39,7 +30,6 @@ module.exports = {
     },
     thickness: {
         valType: 'number',
-        role: 'style',
         min: 0,
         dflt: 30,
         description: [
@@ -50,7 +40,6 @@ module.exports = {
     lenmode: {
         valType: 'enumerated',
         values: ['fraction', 'pixels'],
-        role: 'info',
         dflt: 'fraction',
         description: [
             'Determines whether this color bar\'s length',
@@ -63,7 +52,6 @@ module.exports = {
         valType: 'number',
         min: 0,
         dflt: 1,
-        role: 'style',
         description: [
             'Sets the length of the color bar',
             'This measure excludes the padding of both ends.',
@@ -76,7 +64,6 @@ module.exports = {
         dflt: 1.02,
         min: -2,
         max: 3,
-        role: 'style',
         description: [
             'Sets the x position of the color bar (in plot fraction).'
         ].join(' ')
@@ -85,7 +72,6 @@ module.exports = {
         valType: 'enumerated',
         values: ['left', 'center', 'right'],
         dflt: 'left',
-        role: 'style',
         description: [
             'Sets this color bar\'s horizontal position anchor.',
             'This anchor binds the `x` position to the *left*, *center*',
@@ -94,14 +80,12 @@ module.exports = {
     },
     xpad: {
         valType: 'number',
-        role: 'style',
         min: 0,
         dflt: 10,
         description: 'Sets the amount of padding (in px) along the x direction.'
     },
     y: {
         valType: 'number',
-        role: 'style',
         dflt: 0.5,
         min: -2,
         max: 3,
@@ -112,7 +96,6 @@ module.exports = {
     yanchor: {
         valType: 'enumerated',
         values: ['top', 'middle', 'bottom'],
-        role: 'style',
         dflt: 'middle',
         description: [
             'Sets this color bar\'s vertical position anchor',
@@ -122,7 +105,6 @@ module.exports = {
     },
     ypad: {
         valType: 'number',
-        role: 'style',
         min: 0,
         dflt: 10,
         description: 'Sets the amount of padding (in px) along the y direction.'
@@ -135,7 +117,6 @@ module.exports = {
     bordercolor: axesAttrs.linecolor,
     borderwidth: {
         valType: 'number',
-        role: 'style',
         min: 0,
         dflt: 0,
         description: [
@@ -144,7 +125,6 @@ module.exports = {
     },
     bgcolor: {
         valType: 'color',
-        role: 'style',
         dflt: 'rgba(0,0,0,0)',
         description: 'Sets the color of padded area.'
     },
@@ -156,38 +136,90 @@ module.exports = {
     tickvals: axesAttrs.tickvals,
     ticktext: axesAttrs.ticktext,
     ticks: extendFlat({}, axesAttrs.ticks, {dflt: ''}),
+    ticklabeloverflow: extendFlat({}, axesAttrs.ticklabeloverflow, {
+        description: [
+            'Determines how we handle tick labels that would overflow either the graph div or the domain of the axis.',
+            'The default value for inside tick labels is *hide past domain*.',
+            'In other cases the default is *hide past div*.'
+        ].join(' ')
+    }),
+    ticklabelposition: {
+        valType: 'enumerated',
+        values: [
+            'outside', 'inside',
+            'outside top', 'inside top',
+            'outside bottom', 'inside bottom'
+        ],
+        dflt: 'outside',
+        description: [
+            'Determines where tick labels are drawn.'
+        ].join(' ')
+    },
     ticklen: axesAttrs.ticklen,
     tickwidth: axesAttrs.tickwidth,
     tickcolor: axesAttrs.tickcolor,
     showticklabels: axesAttrs.showticklabels,
-    tickfont: axesAttrs.tickfont,
+    tickfont: fontAttrs({
+        description: 'Sets the color bar\'s tick label font'
+    }),
     tickangle: axesAttrs.tickangle,
     tickformat: axesAttrs.tickformat,
+    tickformatstops: axesAttrs.tickformatstops,
     tickprefix: axesAttrs.tickprefix,
     showtickprefix: axesAttrs.showtickprefix,
     ticksuffix: axesAttrs.ticksuffix,
     showticksuffix: axesAttrs.showticksuffix,
+    separatethousands: axesAttrs.separatethousands,
     exponentformat: axesAttrs.exponentformat,
+    minexponent: axesAttrs.minexponent,
     showexponent: axesAttrs.showexponent,
     title: {
-        valType: 'string',
-        role: 'info',
-        dflt: 'Click to enter colorscale title',
-        description: 'Sets the title of the color bar.'
+        text: {
+            valType: 'string',
+            description: [
+                'Sets the title of the color bar.',
+                'Note that before the existence of `title.text`, the title\'s',
+                'contents used to be defined as the `title` attribute itself.',
+                'This behavior has been deprecated.'
+            ].join(' ')
+        },
+        font: fontAttrs({
+            description: [
+                'Sets this color bar\'s title font.',
+                'Note that the title\'s font used to be set',
+                'by the now deprecated `titlefont` attribute.'
+            ].join(' ')
+        }),
+        side: {
+            valType: 'enumerated',
+            values: ['right', 'top', 'bottom'],
+            dflt: 'top',
+            description: [
+                'Determines the location of color bar\'s title',
+                'with respect to the color bar.',
+                'Note that the title\'s location used to be set',
+                'by the now deprecated `titleside` attribute.'
+            ].join(' ')
+        }
     },
-    titlefont: extendFlat({}, fontAttrs, {
-        description: [
-            'Sets this color bar\'s title font.'
-        ].join(' ')
-    }),
-    titleside: {
-        valType: 'enumerated',
-        values: ['right', 'top', 'bottom'],
-        role: 'style',
-        dflt: 'top',
-        description: [
-            'Determines the location of the colorbar title',
-            'with respect to the color bar.'
-        ].join(' ')
+
+    _deprecated: {
+        title: {
+            valType: 'string',
+            description: [
+                'Deprecated in favor of color bar\'s `title.text`.',
+                'Note that value of color bar\'s `title` is no longer a simple',
+                '*string* but a set of sub-attributes.'
+            ].join(' ')
+        },
+        titlefont: fontAttrs({
+            description: 'Deprecated in favor of color bar\'s `title.font`.'
+        }),
+        titleside: {
+            valType: 'enumerated',
+            values: ['right', 'top', 'bottom'],
+            dflt: 'top',
+            description: 'Deprecated in favor of color bar\'s `title.side`.'
+        }
     }
-};
+}, 'colorbars', 'from-root');

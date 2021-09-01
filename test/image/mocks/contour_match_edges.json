@@ -10,7 +10,6 @@
 
             }
          },
-         "uid":"99e142",
          "showlegend":true,
          "ytype":"array",
          "contours":{
@@ -59,7 +58,9 @@
          "colorbar":{
             "y":1.0221606648199446,
             "x":0.9168965975544923,
-            "titleside":"bottom"
+            "title": {
+               "side":"bottom"
+            }
          },
          "y":[
             0,
@@ -10473,11 +10474,6 @@
       "boxmode":"overlay",
       "paper_bgcolor":"#fff",
       "height":725,
-      "titlefont":{
-         "color":"",
-         "family":"",
-         "size":0
-      },
       "hovermode":"x",
       "font":{
          "color":"#444",
@@ -10485,10 +10481,9 @@
          "size":12
       },
       "autosize":true,
-      "title":"Click to enter Plot title",
+      "title":{"text":"Click to enter Plot title"},
       "plot_bgcolor":"#fff",
       "dragmode":"zoom",
-      "smith":false,
       "width":964,
       "bargap":0.2,
       "xaxis":{
@@ -10506,7 +10501,7 @@
          "autorange":true,
          "nticks":0,
          "linewidth":1,
-         "title":"Click to enter X axis title",
+         "title":{"text":"Click to enter X axis title"},
          "ticks":"outside",
          "showgrid":true,
          "overlaying":false,
@@ -10514,11 +10509,6 @@
          "type":"linear",
          "zerolinewidth":1,
          "ticklen":5,
-         "titlefont":{
-            "color":"",
-            "family":"",
-            "size":0
-         },
          "tickcolor":"#444",
          "showline":false,
          "tickfont":{
@@ -10573,7 +10563,7 @@
          "autorange":true,
          "nticks":0,
          "linewidth":1,
-         "title":"Click to enter Y axis title",
+         "title":{"text":"Click to enter Y axis title"},
          "ticks":"outside",
          "showgrid":true,
          "overlaying":false,
@@ -10581,11 +10571,6 @@
          "type":"linear",
          "zerolinewidth":1,
          "ticklen":5,
-         "titlefont":{
-            "color":"",
-            "family":"",
-            "size":0
-         },
          "tickcolor":"#444",
          "showline":false,
          "tickfont":{

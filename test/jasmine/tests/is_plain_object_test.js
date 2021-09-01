@@ -1,9 +1,9 @@
-var Plotly = require('@src/plotly');
+var Lib = require('@src/lib');
 
 describe('isPlainObject', function() {
     'use strict';
 
-    var isPlainObject = Plotly.Lib.isPlainObject;
+    var isPlainObject = Lib.isPlainObject;
 
     function A() {}
 
@@ -20,6 +20,7 @@ describe('isPlainObject', function() {
         null,
         undefined,
         [],
+        new Float32Array(1),
         'string',
         true,
         false,
@@ -30,7 +31,8 @@ describe('isPlainObject', function() {
         new Array(10),
         new Date(),
         new RegExp('foo'),
-        new String('string')
+        new String('string'),
+        document.createElement('div')
     ];
 
     shouldPass.forEach(function(obj) {
@@ -40,7 +42,7 @@ describe('isPlainObject', function() {
     });
 
     shouldFail.forEach(function(obj) {
-        it('treats ' + JSON.stringify(obj!==window ? obj: 'window') + ' as NOT a plain object', function() {
+        it('treats ' + JSON.stringify(obj !== window ? obj : 'window') + ' as NOT a plain object', function() {
             expect(isPlainObject(obj)).toBe(false);
         });
     });

@@ -1,47 +1,43 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
-var Plotly = require('../../plotly');
+var Colorscale = require('../../components/colorscale');
+
 var heatmapCalc = require('../heatmap/calc');
+var setContours = require('./set_contours');
+var endPlus = require('./end_plus');
 
-
+// most is the same as heatmap calc, then adjust it
+// though a few things inside heatmap calc still look for
+// contour maps, because the makeBoundArray calls are too entangled
 module.exports = function calc(gd, trace) {
-    // most is the same as heatmap calc, then adjust it
-    // though a few things inside heatmap calc still look for
-    // contour maps, because the makeBoundArray calls are too entangled
-    var cd = heatmapCalc(gd, trace),
-        contours = trace.contours;
+    var cd = heatmapCalc(gd, trace);
 
-    // check if we need to auto-choose contour levels
-    if(trace.autocontour!==false) {
-        var dummyAx = {
-            type: 'linear',
-            range: [trace.zmin, trace.zmax]
-        };
-        Plotly.Axes.autoTicks(dummyAx,
-            (trace.zmax - trace.zmin) / (trace.ncontours||15));
-        contours.start = Plotly.Axes.tickFirst(dummyAx);
-        contours.size = dummyAx.dtick;
-        dummyAx.range.reverse();
-        contours.end = Plotly.Axes.tickFirst(dummyAx);
+    var zOut = cd[0].z;
+    setContours(trace, zOut);
 
-        if(contours.start===trace.zmin) contours.start += contours.size;
-        if(contours.end===trace.zmax) contours.end -= contours.size;
+    var contours = trace.contours;
+    var cOpts = Colorscale.extractOpts(trace);
+    var cVals;
 
-        // so rounding errors don't cause us to miss the last contour
-        contours.end += contours.size/100;
+    if(contours.coloring === 'heatmap' && cOpts.auto && trace.autocontour === false) {
+        var start = contours.start;
+        var end = endPlus(contours);
+        var cs = contours.size || 1;
+        var nc = Math.floor((end - start) / cs) + 1;
 
-        // copy auto-contour info back to the source data.
-        trace._input.contours = contours;
+        if(!isFinite(cs)) {
+            cs = 1;
+            nc = 1;
+        }
+
+        var min0 = start - cs / 2;
+        var max0 = min0 + nc * cs;
+        cVals = [min0, max0];
+    } else {
+        cVals = zOut;
     }
+
+    Colorscale.calc(gd, trace, {vals: cVals, cLetter: 'z'});
 
     return cd;
 };

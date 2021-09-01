@@ -1,23 +1,17 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
-var Axes = require('../../plots/cartesian/axes');
 var Lib = require('../../lib');
+var Template = require('../../plot_api/plot_template');
+
+var handleTickValueDefaults = require('../../plots/cartesian/tick_value_defaults');
+var handleTickMarkDefaults = require('../../plots/cartesian/tick_mark_defaults');
+var handleTickLabelDefaults = require('../../plots/cartesian/tick_label_defaults');
 
 var attributes = require('./attributes');
 
-
 module.exports = function colorbarDefaults(containerIn, containerOut, layout) {
-    var colorbarOut = containerOut.colorbar = {},
-        colorbarIn = containerIn.colorbar || {};
+    var colorbarOut = Template.newContainer(containerOut, 'colorbar');
+    var colorbarIn = containerIn.colorbar || {};
 
     function coerce(attr, dflt) {
         return Lib.coerce(colorbarIn, colorbarOut, attributes, attr, dflt);
@@ -49,12 +43,26 @@ module.exports = function colorbarDefaults(containerIn, containerOut, layout) {
     coerce('borderwidth');
     coerce('bgcolor');
 
-    Axes.handleTickValueDefaults(colorbarIn, colorbarOut, coerce, 'linear');
+    var ticklabelposition = coerce('ticklabelposition');
+    coerce('ticklabeloverflow', ticklabelposition.indexOf('inside') !== -1 ? 'hide past domain' : 'hide past div');
 
-    Axes.handleTickDefaults(colorbarIn, colorbarOut, coerce, 'linear',
-        {outerTicks: false, font: layout.font, noHover: true});
+    handleTickValueDefaults(colorbarIn, colorbarOut, coerce, 'linear');
 
-    coerce('title');
-    Lib.coerceFont(coerce, 'titlefont', layout.font);
-    coerce('titleside');
+    var font = layout.font;
+    var opts = {outerTicks: false, font: font};
+    if(ticklabelposition.indexOf('inside') !== -1) {
+        opts.bgColor = 'black'; // could we instead use the average of colors in the scale?
+    }
+    handleTickLabelDefaults(colorbarIn, colorbarOut, coerce, 'linear', opts);
+    handleTickMarkDefaults(colorbarIn, colorbarOut, coerce, 'linear', opts);
+
+    coerce('title.text', layout._dfltTitle.colorbar);
+
+    var tickFont = colorbarOut.tickfont;
+    var dfltTitleFont = Lib.extendFlat({}, tickFont, {
+        color: font.color,
+        size: Lib.bigFont(tickFont.size)
+    });
+    Lib.coerceFont(coerce, 'title.font', dfltTitleFont);
+    coerce('title.side');
 };

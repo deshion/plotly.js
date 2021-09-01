@@ -35,12 +35,12 @@
             "error_x": {
                 "type": "constant",
                 "value": 0.1,
-                "color": "black"
+                "color": "black",
+                "thickness": 10
             },
             "marker": {
                 "symbol": "square"
-            },
-            "uid": "0c6e64"
+            }
         }
     ],
     "layout": {

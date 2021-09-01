@@ -1,19 +1,13 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
-var Plotly = require('../../plotly');
+var axisIds = require('../../plots/cartesian/axis_ids');
 var scatterSubTypes = require('../../traces/scatter/subtypes');
+var Registry = require('../../registry');
+var isUnifiedHover = require('../fx/helpers').isUnifiedHover;
 
-var createModeBar = require('./');
+var createModeBar = require('./modebar');
 var modeBarButtons = require('./buttons');
+var DRAW_MODES = require('./constants').DRAW_MODES;
 
 /**
  * ModeBar wrapper around 'create' and 'update',
@@ -24,11 +18,11 @@ var modeBarButtons = require('./buttons');
  *
  */
 module.exports = function manageModeBar(gd) {
-    var fullLayout = gd._fullLayout,
-        context = gd._context,
-        modeBar = fullLayout._modeBar;
+    var fullLayout = gd._fullLayout;
+    var context = gd._context;
+    var modeBar = fullLayout._modeBar;
 
-    if(!context.displayModeBar) {
+    if(!context.displayModeBar && !context.watermark) {
         if(modeBar) {
             modeBar.destroy();
             delete fullLayout._modeBar;
@@ -55,13 +49,10 @@ module.exports = function manageModeBar(gd) {
 
     if(Array.isArray(customButtons) && customButtons.length) {
         buttonGroups = fillCustomButton(customButtons);
-    }
-    else {
-        buttonGroups = getButtonGroups(
-            gd,
-            context.modeBarButtonsToRemove,
-            context.modeBarButtonsToAdd
-        );
+    } else if(!context.displayModeBar && context.watermark) {
+        buttonGroups = [];
+    } else {
+        buttonGroups = getButtonGroups(gd);
     }
 
     if(modeBar) modeBar.update(gd, buttonGroups);
@@ -69,113 +60,272 @@ module.exports = function manageModeBar(gd) {
 };
 
 // logic behind which buttons are displayed by default
-function getButtonGroups(gd, buttonsToRemove, buttonsToAdd) {
-    var fullLayout = gd._fullLayout,
-        fullData = gd._fullData,
-        groups = [],
-        i,
-        trace;
+function getButtonGroups(gd) {
+    var fullLayout = gd._fullLayout;
+    var fullData = gd._fullData;
+    var context = gd._context;
+
+    function match(name, B) {
+        if(typeof B === 'string') {
+            if(B.toLowerCase() === name.toLowerCase()) return true;
+        } else {
+            var v0 = B.name;
+            var v1 = (B._cat || B.name);
+
+            if(v0 === name || v1 === name.toLowerCase()) return true;
+        }
+        return false;
+    }
+
+    var layoutAdd = fullLayout.modebar.add;
+    if(typeof layoutAdd === 'string') layoutAdd = [layoutAdd];
+
+    var layoutRemove = fullLayout.modebar.remove;
+    if(typeof layoutRemove === 'string') layoutRemove = [layoutRemove];
+
+    var buttonsToAdd = context.modeBarButtonsToAdd.concat(
+        layoutAdd.filter(function(e) {
+            for(var i = 0; i < context.modeBarButtonsToRemove.length; i++) {
+                if(match(e, context.modeBarButtonsToRemove[i])) return false;
+            }
+            return true;
+        })
+    );
+
+    var buttonsToRemove = context.modeBarButtonsToRemove.concat(
+        layoutRemove.filter(function(e) {
+            for(var i = 0; i < context.modeBarButtonsToAdd.length; i++) {
+                if(match(e, context.modeBarButtonsToAdd[i])) return false;
+            }
+            return true;
+        })
+    );
+
+    var hasCartesian = fullLayout._has('cartesian');
+    var hasGL3D = fullLayout._has('gl3d');
+    var hasGeo = fullLayout._has('geo');
+    var hasPie = fullLayout._has('pie');
+    var hasFunnelarea = fullLayout._has('funnelarea');
+    var hasGL2D = fullLayout._has('gl2d');
+    var hasTernary = fullLayout._has('ternary');
+    var hasMapbox = fullLayout._has('mapbox');
+    var hasPolar = fullLayout._has('polar');
+    var hasSankey = fullLayout._has('sankey');
+    var allAxesFixed = areAllAxesFixed(fullLayout);
+    var hasUnifiedHoverLabel = isUnifiedHover(fullLayout.hovermode);
+
+    var groups = [];
 
     function addGroup(newGroup) {
+        if(!newGroup.length) return;
+
         var out = [];
 
         for(var i = 0; i < newGroup.length; i++) {
-            var button = newGroup[i];
-            if(buttonsToRemove.indexOf(button) !== -1) continue;
-            out.push(modeBarButtons[button]);
+            var name = newGroup[i];
+            var B = modeBarButtons[name];
+            var v0 = B.name.toLowerCase();
+            var v1 = (B._cat || B.name).toLowerCase();
+            var found = false;
+            for(var q = 0; q < buttonsToRemove.length; q++) {
+                var t = buttonsToRemove[q].toLowerCase();
+                if(t === v0 || t === v1) {
+                    found = true;
+                    break;
+                }
+            }
+            if(found) continue;
+            out.push(modeBarButtons[name]);
         }
 
         groups.push(out);
     }
 
     // buttons common to all plot types
-    addGroup(['toImage', 'sendDataToCloud']);
+    var commonGroup = ['toImage'];
+    if(context.showEditInChartStudio) commonGroup.push('editInChartStudio');
+    else if(context.showSendToCloud) commonGroup.push('sendDataToCloud');
+    addGroup(commonGroup);
 
-    if(fullLayout._hasGL3D) {
-        addGroup(['zoom3d', 'pan3d', 'orbitRotation', 'tableRotation']);
-        addGroup(['resetCameraDefault3d', 'resetCameraLastSave3d']);
-        addGroup(['hoverClosest3d']);
+    var zoomGroup = [];
+    var hoverGroup = [];
+    var resetGroup = [];
+    var dragModeGroup = [];
+
+    if((hasCartesian || hasGL2D || hasPie || hasFunnelarea || hasTernary) + hasGeo + hasGL3D + hasMapbox + hasPolar > 1) {
+        // graphs with more than one plot types get 'union buttons'
+        // which reset the view or toggle hover labels across all subplots.
+        hoverGroup = ['toggleHover'];
+        resetGroup = ['resetViews'];
+    } else if(hasGeo) {
+        zoomGroup = ['zoomInGeo', 'zoomOutGeo'];
+        hoverGroup = ['hoverClosestGeo'];
+        resetGroup = ['resetGeo'];
+    } else if(hasGL3D) {
+        hoverGroup = ['hoverClosest3d'];
+        resetGroup = ['resetCameraDefault3d', 'resetCameraLastSave3d'];
+    } else if(hasMapbox) {
+        zoomGroup = ['zoomInMapbox', 'zoomOutMapbox'];
+        hoverGroup = ['toggleHover'];
+        resetGroup = ['resetViewMapbox'];
+    } else if(hasGL2D) {
+        hoverGroup = ['hoverClosestGl2d'];
+    } else if(hasPie) {
+        hoverGroup = ['hoverClosestPie'];
+    } else if(hasSankey) {
+        hoverGroup = ['hoverClosestCartesian', 'hoverCompareCartesian'];
+        resetGroup = ['resetViewSankey'];
+    } else { // hasPolar, hasTernary
+        // always show at least one hover icon.
+        hoverGroup = ['toggleHover'];
     }
-
-    if(fullLayout._hasGeo) {
-        addGroup(['zoomInGeo', 'zoomOutGeo', 'resetGeo']);
-        addGroup(['hoverClosestGeo']);
+    // if we have cartesian, allow switching between closest and compare
+    // regardless of what other types are on the plot, since they'll all
+    // just treat any truthy hovermode as 'closest'
+    if(hasCartesian) {
+        hoverGroup = ['toggleSpikelines', 'hoverClosestCartesian', 'hoverCompareCartesian'];
     }
-
-    var hasCartesian = fullLayout._hasCartesian,
-        hasGL2D = fullLayout._hasGL2D,
-        allAxesFixed = areAllAxesFixed(fullLayout),
-        dragModeGroup = [];
+    if(hasNoHover(fullData) || hasUnifiedHoverLabel) {
+        hoverGroup = [];
+    }
 
     if((hasCartesian || hasGL2D) && !allAxesFixed) {
+        zoomGroup = ['zoomIn2d', 'zoomOut2d', 'autoScale2d'];
+        if(resetGroup[0] !== 'resetViews') resetGroup = ['resetScale2d'];
+    }
+
+    if(hasGL3D) {
+        dragModeGroup = ['zoom3d', 'pan3d', 'orbitRotation', 'tableRotation'];
+    } else if(((hasCartesian || hasGL2D) && !allAxesFixed) || hasTernary) {
         dragModeGroup = ['zoom2d', 'pan2d'];
+    } else if(hasMapbox || hasGeo) {
+        dragModeGroup = ['pan2d'];
+    } else if(hasPolar) {
+        dragModeGroup = ['zoom2d'];
     }
-    if(hasCartesian) {
-        // look for traces that support selection
-        // to be updated as we add more selectPoints handlers
-        var selectable = false;
-        for(i = 0; i < fullData.length; i++) {
-            if(selectable) break;
-            trace = fullData[i];
-            if(!trace._module || !trace._module.selectPoints) continue;
+    if(isSelectable(fullData)) {
+        dragModeGroup.push('select2d', 'lasso2d');
+    }
 
-            if(trace.type === 'scatter') {
-                if(scatterSubTypes.hasMarkers(trace) || scatterSubTypes.hasText(trace)) {
-                    selectable = true;
+    var enabledHoverGroup = [];
+    var enableHover = function(a) {
+        // return if already added
+        if(enabledHoverGroup.indexOf(a) !== -1) return;
+        // should be in hoverGroup
+        if(hoverGroup.indexOf(a) !== -1) {
+            enabledHoverGroup.push(a);
+        }
+    };
+    if(Array.isArray(buttonsToAdd)) {
+        var newList = [];
+        for(var i = 0; i < buttonsToAdd.length; i++) {
+            var b = buttonsToAdd[i];
+            if(typeof b === 'string') {
+                b = b.toLowerCase();
+
+                if(DRAW_MODES.indexOf(b) !== -1) {
+                    // accept pre-defined drag modes i.e. shape drawing features as string
+                    if(
+                        fullLayout._has('mapbox') || // draw shapes in paper coordinate (could be improved in future to support data coordinate, when there is no pitch)
+                        fullLayout._has('cartesian') // draw shapes in data coordinate
+                    ) {
+                        dragModeGroup.push(b);
+                    }
+                } else if(b === 'togglespikelines') {
+                    enableHover('toggleSpikelines');
+                } else if(b === 'togglehover') {
+                    enableHover('toggleHover');
+                } else if(b === 'hovercompare') {
+                    enableHover('hoverCompareCartesian');
+                } else if(b === 'hoverclosest') {
+                    enableHover('hoverClosestCartesian');
+                    enableHover('hoverClosestGeo');
+                    enableHover('hoverClosest3d');
+                    enableHover('hoverClosestGl2d');
+                    enableHover('hoverClosestPie');
+                } else if(b === 'v1hovermode') {
+                    enableHover('toggleHover');
+                    enableHover('hoverClosestCartesian');
+                    enableHover('hoverCompareCartesian');
+                    enableHover('hoverClosestGeo');
+                    enableHover('hoverClosest3d');
+                    enableHover('hoverClosestGl2d');
+                    enableHover('hoverClosestPie');
                 }
-            }
-            // assume that in general if the trace module has selectPoints,
-            // then it's selectable. Scatter is an exception to this because it must
-            // have markers or text, not just be a scatter type.
-            else selectable = true;
+            } else newList.push(b);
         }
-
-        if(selectable) {
-            dragModeGroup.push('select2d');
-            dragModeGroup.push('lasso2d');
-        }
-    }
-    if(dragModeGroup.length) addGroup(dragModeGroup);
-
-    if((hasCartesian || hasGL2D) && !allAxesFixed) {
-        addGroup(['zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d']);
+        buttonsToAdd = newList;
     }
 
-    if(hasCartesian) {
-        addGroup(['hoverClosestCartesian', 'hoverCompareCartesian']);
-    }
-    if(hasGL2D) {
-        addGroup(['hoverClosestGl2d']);
-    }
-    if(fullLayout._hasPie) {
-        addGroup(['hoverClosestPie']);
-    }
+    addGroup(dragModeGroup);
+    addGroup(zoomGroup.concat(resetGroup));
+    addGroup(enabledHoverGroup);
 
-    // append buttonsToAdd to the groups
-    if(buttonsToAdd.length) {
-        if(Array.isArray(buttonsToAdd[0])) {
-            for(i = 0; i < buttonsToAdd.length; i++) {
-                groups.push(buttonsToAdd[i]);
-            }
-        }
-        else groups.push(buttonsToAdd);
-    }
-
-    return groups;
+    return appendButtonsToGroups(groups, buttonsToAdd);
 }
 
 function areAllAxesFixed(fullLayout) {
-    var axList = Plotly.Axes.list({_fullLayout: fullLayout}, null, true);
-    var allFixed = true;
+    var axList = axisIds.list({_fullLayout: fullLayout}, null, true);
 
     for(var i = 0; i < axList.length; i++) {
         if(!axList[i].fixedrange) {
-            allFixed = false;
-            break;
+            return false;
         }
     }
 
-    return allFixed;
+    return true;
+}
+
+// look for traces that support selection
+// to be updated as we add more selectPoints handlers
+function isSelectable(fullData) {
+    var selectable = false;
+
+    for(var i = 0; i < fullData.length; i++) {
+        if(selectable) break;
+
+        var trace = fullData[i];
+
+        if(!trace._module || !trace._module.selectPoints) continue;
+
+        if(Registry.traceIs(trace, 'scatter-like')) {
+            if(scatterSubTypes.hasMarkers(trace) || scatterSubTypes.hasText(trace)) {
+                selectable = true;
+            }
+        } else if(Registry.traceIs(trace, 'box-violin')) {
+            if(trace.boxpoints === 'all' || trace.points === 'all') {
+                selectable = true;
+            }
+        } else {
+            // assume that in general if the trace module has selectPoints,
+            // then it's selectable. Scatter is an exception to this because it must
+            // have markers or text, not just be a scatter type.
+
+            selectable = true;
+        }
+    }
+
+    return selectable;
+}
+
+// check whether all trace are 'noHover'
+function hasNoHover(fullData) {
+    for(var i = 0; i < fullData.length; i++) {
+        if(!Registry.traceIs(fullData[i], 'noHover')) return false;
+    }
+    return true;
+}
+
+function appendButtonsToGroups(groups, buttons) {
+    if(buttons.length) {
+        if(Array.isArray(buttons[0])) {
+            for(var i = 0; i < buttons.length; i++) {
+                groups.push(buttons[i]);
+            }
+        } else groups.push(buttons);
+    }
+
+    return groups;
 }
 
 // fill in custom buttons referring to default mode bar buttons
@@ -189,8 +339,7 @@ function fillCustomButton(customButtons) {
             if(typeof button === 'string') {
                 if(modeBarButtons[button] !== undefined) {
                     customButtons[i][j] = modeBarButtons[button];
-                }
-                else {
+                } else {
                     throw new Error([
                         '*modeBarButtons* configuration options',
                         'invalid button name'

@@ -1,30 +1,22 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
-var Plotly = require('../plotly');
+var Registry = require('../registry');
+var Lib = require('../lib');
 
-var extendFlat = Plotly.Lib.extendFlat;
-var extendDeep = Plotly.Lib.extendDeep;
+var extendFlat = Lib.extendFlat;
+var extendDeep = Lib.extendDeep;
 
 // Put default plotTile layouts here
 function cloneLayoutOverride(tileClass) {
     var override;
 
-    switch (tileClass) {
+    switch(tileClass) {
         case 'themes__thumb':
             override = {
                 autosize: true,
                 width: 150,
                 height: 150,
-                title: '',
+                title: {text: ''},
                 showlegend: false,
                 margin: {l: 5, r: 5, t: 5, b: 5, pad: 0},
                 annotations: []
@@ -33,7 +25,7 @@ function cloneLayoutOverride(tileClass) {
 
         case 'thumbnail':
             override = {
-                title: '',
+                title: {text: ''},
                 hidesources: true,
                 showlegend: false,
                 borderwidth: 0,
@@ -58,76 +50,87 @@ function keyIsAxis(keyName) {
 
 
 module.exports = function clonePlot(graphObj, options) {
-
-    // Polar plot compatibility
-    if (graphObj.framework && graphObj.framework.isPolar) {
-        graphObj = graphObj.framework.getConfig();
-    }
-
     var i;
     var oldData = graphObj.data;
     var oldLayout = graphObj.layout;
     var newData = extendDeep([], oldData);
     var newLayout = extendDeep({}, oldLayout, cloneLayoutOverride(options.tileClass));
+    var context = graphObj._context || {};
 
-    if (options.width) newLayout.width = options.width;
-    if (options.height) newLayout.height = options.height;
+    if(options.width) newLayout.width = options.width;
+    if(options.height) newLayout.height = options.height;
 
-    if (options.tileClass === 'thumbnail' || options.tileClass === 'themes__thumb') {
+    if(options.tileClass === 'thumbnail' || options.tileClass === 'themes__thumb') {
         // kill annotations
         newLayout.annotations = [];
         var keys = Object.keys(newLayout);
 
-        for (i = 0; i < keys.length; i++) {
-            if (keyIsAxis(keys[i])) {
-                newLayout[keys[i]].title = '';
+        for(i = 0; i < keys.length; i++) {
+            if(keyIsAxis(keys[i])) {
+                newLayout[keys[i]].title = {text: ''};
             }
         }
 
         // kill colorbar and pie labels
-        for (i = 0; i < newData.length; i++) {
+        for(i = 0; i < newData.length; i++) {
             var trace = newData[i];
             trace.showscale = false;
             if(trace.marker) trace.marker.showscale = false;
-            if(trace.type === 'pie') trace.textposition = 'none';
+            if(Registry.traceIs(trace, 'pie-like')) trace.textposition = 'none';
         }
     }
 
-    if (Array.isArray(options.annotations)) {
-        for (i = 0; i < options.annotations.length; i++) {
+    if(Array.isArray(options.annotations)) {
+        for(i = 0; i < options.annotations.length; i++) {
             newLayout.annotations.push(options.annotations[i]);
         }
     }
 
-    var sceneIds = Plotly.Plots.getSubplotIds(newLayout, 'gl3d');
-
-    if (sceneIds.length) {
+    // TODO: does this scene modification really belong here?
+    // If we still need it, can it move into the gl3d module?
+    var sceneIds = Object.keys(newLayout).filter(function(key) {
+        return key.match(/^scene\d*$/);
+    });
+    if(sceneIds.length) {
         var axesImageOverride = {};
-        if (options.tileClass === 'thumbnail') {
+        if(options.tileClass === 'thumbnail') {
             axesImageOverride = {
-                title: '',
+                title: {text: ''},
                 showaxeslabels: false,
                 showticklabels: false,
                 linetickenable: false
             };
         }
-        for (i = 0; i < sceneIds.length; i++) {
-            var sceneId = sceneIds[i];
+        for(i = 0; i < sceneIds.length; i++) {
+            var scene = newLayout[sceneIds[i]];
 
-            extendFlat(newLayout[sceneId].xaxis, axesImageOverride);
-            extendFlat(newLayout[sceneId].yaxis, axesImageOverride);
-            extendFlat(newLayout[sceneId].zaxis, axesImageOverride);
+            if(!scene.xaxis) {
+                scene.xaxis = {};
+            }
+
+            if(!scene.yaxis) {
+                scene.yaxis = {};
+            }
+
+            if(!scene.zaxis) {
+                scene.zaxis = {};
+            }
+
+            extendFlat(scene.xaxis, axesImageOverride);
+            extendFlat(scene.yaxis, axesImageOverride);
+            extendFlat(scene.zaxis, axesImageOverride);
 
             // TODO what does this do?
-            newLayout[sceneId]._scene = null;
+            scene._scene = null;
         }
     }
 
-    var td = document.createElement('div');
-    if (options.tileClass) td.className = options.tileClass;
+    var gd = document.createElement('div');
+    if(options.tileClass) gd.className = options.tileClass;
 
     var plotTile = {
-        td: td,
+        gd: gd,
+        td: gd, // for external (image server) compatibility
         layout: newLayout,
         data: newData,
         config: {
@@ -139,16 +142,17 @@ module.exports = function clonePlot(graphObj, options) {
                 options.plotGlPixelRatio,
             displaylogo: options.displaylogo || false,
             showLink: options.showLink || false,
-            showTips: options.showTips || false
+            showTips: options.showTips || false,
+            mapboxAccessToken: context.mapboxAccessToken
         }
     };
 
-    if (options.setBackground !== 'transparent') {
+    if(options.setBackground !== 'transparent') {
         plotTile.config.setBackground = options.setBackground || 'opaque';
     }
 
-    // attaching the default Layout the td, so you can grab it later
-    plotTile.td.defaultLayout = cloneLayoutOverride(options.tileClass);
+    // attaching the default Layout the gd, so you can grab it later
+    plotTile.gd.defaultLayout = cloneLayoutOverride(options.tileClass);
 
     return plotTile;
 };

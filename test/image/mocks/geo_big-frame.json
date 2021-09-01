@@ -34,12 +34,11 @@
             "textfont": {
                 "size": 20
             },
-            "textposition": "top right",
-            "uid": "747526"
+            "textposition": "top right"
         }
     ],
     "layout": {
-        "title": "Big frame / up-side down map",
+        "title": {"text": "Big frame / up-side down map"},
         "geo": {
             "projection": {
                 "rotation": {

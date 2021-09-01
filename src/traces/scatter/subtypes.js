@@ -1,13 +1,6 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
+
+var Lib = require('../../lib');
 
 module.exports = {
     hasLines: function(trace) {
@@ -16,8 +9,11 @@ module.exports = {
     },
 
     hasMarkers: function(trace) {
-        return trace.visible && trace.mode &&
-            trace.mode.indexOf('markers') !== -1;
+        return trace.visible && (
+            (trace.mode && trace.mode.indexOf('markers') !== -1) ||
+            // until splom implements 'mode'
+            trace.type === 'splom'
+        );
     },
 
     hasText: function(trace) {
@@ -26,7 +22,7 @@ module.exports = {
     },
 
     isBubble: function(trace) {
-        return (typeof trace.marker === 'object' &&
-                    Array.isArray(trace.marker.size));
+        return Lib.isPlainObject(trace.marker) &&
+            Lib.isArrayOrTypedArray(trace.marker.size);
     }
 };

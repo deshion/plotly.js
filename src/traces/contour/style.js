@@ -1,56 +1,70 @@
-/**
-* Copyright 2012-2016, Plotly, Inc.
-* All rights reserved.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
-
-
 'use strict';
 
-var d3 = require('d3');
+var d3 = require('@plotly/d3');
 
-var Plotly = require('../../plotly');
-var getColorscale = require('../../components/colorscale/get_scale');
+var Drawing = require('../../components/drawing');
 var heatmapStyle = require('../heatmap/style');
+
+var makeColorMap = require('./make_color_map');
 
 
 module.exports = function style(gd) {
-    d3.select(gd).selectAll('g.contour')
-        .style('opacity',function(d){ return d.trace.opacity; })
-        .each(function(d) {
-            var c = d3.select(this),
-                trace = d.trace,
-                contours = trace.contours,
-                line = trace.line,
-                colorLines = contours.coloring==='lines',
-                cs = contours.size||1,
-                nc = Math.floor((contours.end + cs/10 - contours.start)/cs) + 1,
-                scl = getColorscale(trace.colorscale),
-                extraLevel = colorLines ? 0 : 1,
-                colormap = d3.scale.linear()
-                    .domain(scl.map(function(si){
-                        return (si[0]*(nc+extraLevel-1)-(extraLevel/2)) * cs +
-                            contours.start;
-                    }))
-                    .interpolate(d3.interpolateRgb)
-                    .range(scl.map(function(si){ return si[1]; }));
+    var contours = d3.select(gd).selectAll('g.contour');
 
-            c.selectAll('g.contourlevel').each(function(d, i) {
-                d3.select(this).selectAll('path')
-                    .call(Plotly.Drawing.lineGroupStyle,
-                        line.width,
-                        colorLines ? colormap(contours.start+i*cs) : line.color,
-                        line.dash);
-            });
-            c.selectAll('g.contourbg path')
-                .style('fill', colormap(contours.start - cs/2));
-            c.selectAll('g.contourfill path')
-                .style('fill',function(d, i){
-                    return colormap(contours.start + (i+0.5)*cs);
-                });
+    contours.style('opacity', function(d) {
+        return d[0].trace.opacity;
+    });
+
+    contours.each(function(d) {
+        var c = d3.select(this);
+        var trace = d[0].trace;
+        var contours = trace.contours;
+        var line = trace.line;
+        var cs = contours.size || 1;
+        var start = contours.start;
+
+        // for contourcarpet only - is this a constraint-type contour trace?
+        var isConstraintType = contours.type === 'constraint';
+        var colorLines = !isConstraintType && contours.coloring === 'lines';
+        var colorFills = !isConstraintType && contours.coloring === 'fill';
+
+        var colorMap = (colorLines || colorFills) ? makeColorMap(trace) : null;
+
+        c.selectAll('g.contourlevel').each(function(d) {
+            d3.select(this).selectAll('path')
+                .call(Drawing.lineGroupStyle,
+                    line.width,
+                    colorLines ? colorMap(d.level) : line.color,
+                    line.dash);
         });
+
+        var labelFont = contours.labelfont;
+        c.selectAll('g.contourlabels text').each(function(d) {
+            Drawing.font(d3.select(this), {
+                family: labelFont.family,
+                size: labelFont.size,
+                color: labelFont.color || (colorLines ? colorMap(d.level) : line.color)
+            });
+        });
+
+        if(isConstraintType) {
+            c.selectAll('g.contourfill path')
+                .style('fill', trace.fillcolor);
+        } else if(colorFills) {
+            var firstFill;
+
+            c.selectAll('g.contourfill path')
+                .style('fill', function(d) {
+                    if(firstFill === undefined) firstFill = d.level;
+                    return colorMap(d.level + 0.5 * cs);
+                });
+
+            if(firstFill === undefined) firstFill = start;
+
+            c.selectAll('g.contourbg path')
+                .style('fill', colorMap(firstFill - 0.5 * cs));
+        }
+    });
 
     heatmapStyle(gd);
 };
