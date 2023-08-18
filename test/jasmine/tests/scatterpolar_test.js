@@ -1,6 +1,6 @@
-var Plotly = require('@lib/index');
-var Lib = require('@src/lib');
-var ScatterPolar = require('@src/traces/scatterpolar');
+var Plotly = require('../../../lib/index');
+var Lib = require('../../../src/lib');
+var ScatterPolar = require('../../../src/traces/scatterpolar');
 
 var createGraphDiv = require('../assets/create_graph_div');
 var destroyGraphDiv = require('../assets/destroy_graph_div');
@@ -91,7 +91,7 @@ describe('Test scatterpolar hover:', function() {
 
         var fig = Lib.extendDeep(
             {width: 700, height: 500},
-            specs.mock || require('@mocks/polar_scatter.json')
+            specs.mock || require('../../image/mocks/polar_scatter.json')
         );
 
         if(specs.patch) {
@@ -154,13 +154,13 @@ describe('Test scatterpolar hover:', function() {
         name: 'Trial 3'
     }, {
         desc: 'on fills',
-        mock: require('@mocks/polar_fills.json'),
+        mock: require('../../image/mocks/polar_fills.json'),
         pos: [300, 230],
         nums: 'trace 2',
         name: ''
     }, {
         desc: 'on category axes',
-        mock: require('@mocks/polar_categories.json'),
+        mock: require('../../image/mocks/polar_categories.json'),
         patch: function(fig) {
             fig.data.forEach(function(t) { t.fill = 'none'; });
             return fig;
@@ -192,6 +192,30 @@ describe('Test scatterpolar hover:', function() {
         },
         nums: 'r: 4.022892\nθ: 128.342°\n4.02289202968',
         name: 'Trial 3'
+    }, {
+        desc: 'with prefix and suffix',
+        patch: function(fig) {
+            fig.layout.polar.radialaxis.tickprefix = '(';
+            fig.layout.polar.radialaxis.ticksuffix = ')';
+            fig.layout.polar.angularaxis.tickprefix = '[';
+            fig.layout.polar.angularaxis.ticksuffix = ']';
+            return fig;
+        },
+        nums: 'r: (4.022892)\nθ: [128.342]',
+        name: 'Trial 3'
+    }, {
+        desc: 'with prefix and suffix on invisible axes',
+        patch: function(fig) {
+            fig.layout.polar.radialaxis.visible = false,
+            fig.layout.polar.radialaxis.tickprefix = '(';
+            fig.layout.polar.radialaxis.ticksuffix = ')';
+            fig.layout.polar.angularaxis.visible = false;
+            fig.layout.polar.angularaxis.tickprefix = '[';
+            fig.layout.polar.angularaxis.ticksuffix = ']';
+            return fig;
+        },
+        nums: 'r: (4.022892)\nθ: [128.342]',
+        name: 'Trial 3'
     }]
     .forEach(function(specs) {
         it('should generate correct hover labels ' + specs.desc, function(done) {
@@ -202,12 +226,12 @@ describe('Test scatterpolar hover:', function() {
 
 describe('Test scatterpolar texttemplate:', function() {
     checkTextTemplate([{
-        'type': 'scatterpolar',
-        'mode': 'markers+text',
-        'text': ['A', 'B', 'C'],
-        'textposition': 'top center',
-        'r': [1, 0.5, 1],
-        'theta': [0, 90, 180],
+        type: 'scatterpolar',
+        mode: 'markers+text',
+        text: ['A', 'B', 'C'],
+        textposition: 'top center',
+        r: [1, 0.5, 1],
+        theta: [0, 90, 180],
     }], 'g.textpoint', [
         ['%{text}: (%{r:0.2f}, %{theta:0.1f})', ['A: (1.00, 0.0)', 'B: (0.50, 90.0)', 'C: (1.00, 180.0)']],
         [['', 'b%{theta:0.2f}', '%{theta:0.2f}'], ['', 'b90.00', '180.00']]

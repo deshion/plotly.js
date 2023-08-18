@@ -96,8 +96,10 @@ function draw(gd, titleClass, options) {
 
     var elShouldExist = txt || editable;
 
+    var hColorbarMoveTitle;
     if(!group) {
         group = Lib.ensureSingle(fullLayout._infolayer, 'g', 'g-' + titleClass);
+        hColorbarMoveTitle = fullLayout._hColorbarMoveTitle;
     }
 
     var el = group.selectAll('text')
@@ -121,13 +123,17 @@ function draw(gd, titleClass, options) {
     function drawTitle(titleEl) {
         var transformVal;
 
+        if(!transform && hColorbarMoveTitle) {
+            transform = {};
+        }
+
         if(transform) {
             transformVal = '';
             if(transform.rotate) {
                 transformVal += 'rotate(' + [transform.rotate, attributes.x, attributes.y] + ')';
             }
-            if(transform.offset) {
-                transformVal += strTranslate(0, transform.offset);
+            if(transform.offset || hColorbarMoveTitle) {
+                transformVal += strTranslate(0, (transform.offset || 0) - (hColorbarMoveTitle || 0));
             }
         } else {
             transformVal = null;
@@ -161,11 +167,21 @@ function draw(gd, titleClass, options) {
             var pad = isNumeric(avoid.pad) ? avoid.pad : 2;
 
             var titlebb = Drawing.bBox(titleGroup.node());
+
+            // Account for reservedMargins
+            var reservedMargins = {t: 0, b: 0, l: 0, r: 0};
+            var margins = gd._fullLayout._reservedMargin;
+            for(var key in margins) {
+                for(var side in margins[key]) {
+                    var val = margins[key][side];
+                    reservedMargins[side] = Math.max(reservedMargins[side], val);
+                }
+            }
             var paperbb = {
-                left: 0,
-                top: 0,
-                right: fullLayout.width,
-                bottom: fullLayout.height
+                left: reservedMargins.l,
+                top: reservedMargins.t,
+                right: fullLayout.width - reservedMargins.r,
+                bottom: fullLayout.height - reservedMargins.b
             };
 
             var maxshift = avoid.maxShift ||
@@ -196,6 +212,8 @@ function draw(gd, titleClass, options) {
                     }
                 });
                 shift = Math.min(maxshift, shift);
+                // Keeping track of this for calculation of full axis size if needed
+                cont._titleScoot = Math.abs(shift);
             }
 
             if(shift > 0 || maxshift < 0) {

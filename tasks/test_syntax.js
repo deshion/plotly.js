@@ -31,7 +31,7 @@ assertCircularDeps();
 // check for for focus and exclude jasmine blocks
 function assertJasmineSuites() {
     var BLACK_LIST = ['fdescribe', 'fit', 'xdescribe', 'xit'];
-    var TAGS = ['noCI', 'noCIdep', 'gl', 'flaky'];
+    var TAGS = ['noCI', 'noCIdep', 'noFF82', 'gl', 'flaky'];
     var IT_ONLY_TAGS = ['gl', 'flaky'];
     var logs = [];
 
@@ -193,7 +193,7 @@ function assertSrcContents() {
          * - If you use conforms to these rules, you may update
          *   KNOWN_GET_COMPUTED_STYLE_CALLS to count the new use.
          */
-        var KNOWN_GET_COMPUTED_STYLE_CALLS = 6;
+        var KNOWN_GET_COMPUTED_STYLE_CALLS = 7;
         if(getComputedStyleCnt !== KNOWN_GET_COMPUTED_STYLE_CALLS) {
             logs.push('Expected ' + KNOWN_GET_COMPUTED_STYLE_CALLS +
                 ' window.getComputedStyle calls, found ' + getComputedStyleCnt +

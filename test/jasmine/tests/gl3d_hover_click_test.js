@@ -1,5 +1,5 @@
-var Plotly = require('@lib/index');
-var Lib = require('@src/lib');
+var Plotly = require('../../../lib/index');
+var Lib = require('../../../src/lib');
 
 var d3SelectAll = require('../../strict-d3').selectAll;
 var createGraphDiv = require('../assets/create_graph_div');
@@ -12,11 +12,11 @@ var customAssertions = require('../assets/custom_assertions');
 var assertHoverLabelStyle = customAssertions.assertHoverLabelStyle;
 var assertHoverLabelContent = customAssertions.assertHoverLabelContent;
 
-var mock = require('@mocks/gl3d_marker-arrays.json');
-var mesh3dcoloringMock = require('@mocks/gl3d_mesh3d_coloring.json');
-var mesh3dcellIntensityMock = require('@mocks/gl3d_mesh3d_cell-intensity.json');
-var mesh3dbunnyMock = require('@mocks/gl3d_bunny_cell-area.json');
-var multipleScatter3dMock = require('@mocks/gl3d_multiple-scatter3d-traces.json');
+var mock = require('../../image/mocks/gl3d_marker-arrays.json');
+var mesh3dcoloringMock = require('../../image/mocks/gl3d_mesh3d_coloring.json');
+var mesh3dcellIntensityMock = require('../../image/mocks/gl3d_mesh3d_cell-intensity.json');
+var mesh3dbunnyMock = require('../../image/mocks/gl3d_bunny_cell-area.json');
+var multipleScatter3dMock = require('../../image/mocks/gl3d_multiple-scatter3d-traces.json');
 
 // lines, markers, text, error bars and surfaces each
 // correspond to one glplot object
@@ -26,8 +26,8 @@ mock2.data[0].error_z = { value: 10 };
 mock2.data[0].surfaceaxis = 2;
 mock2.layout.showlegend = true;
 
-var mock3 = require('@mocks/gl3d_autocolorscale');
-var mock4 = require('@mocks/gl3d_transparent_same-depth.json');
+var mock3 = require('../../image/mocks/gl3d_autocolorscale');
+var mock4 = require('../../image/mocks/gl3d_transparent_same-depth.json');
 
 describe('Test gl3d trace click/hover:', function() {
     var gd, ptData;
@@ -303,7 +303,7 @@ describe('Test gl3d trace click/hover:', function() {
     });
 
     it('@gl should display correct hover labels and emit correct event data (surface case with connectgaps enabled)', function(done) {
-        var surfaceConnectgaps = require('@mocks/gl3d_surface_connectgaps');
+        var surfaceConnectgaps = require('../../image/mocks/gl3d_surface_connectgaps');
         var _mock = Lib.extendDeep({}, surfaceConnectgaps);
 
         function _hover() {
@@ -363,7 +363,7 @@ describe('Test gl3d trace click/hover:', function() {
             }, 'initial');
 
             return Plotly.restyle(gd, {
-                'hoverinfo': [[
+                hoverinfo: [[
                     ['all', 'all', 'all'],
                     ['all', 'all', 'y'],
                     ['all', 'all', 'all']
@@ -382,7 +382,7 @@ describe('Test gl3d trace click/hover:', function() {
         .then(delay(20))
         .then(function() {
             assertEventData(1, 2, 43, 0, [1, 2], {
-                'hoverinfo': 'y',
+                hoverinfo: 'y',
                 'hoverlabel.font.color': 'cyan'
             });
             assertHoverLabelStyle(d3SelectAll('g.hovertext'), {
@@ -408,7 +408,7 @@ describe('Test gl3d trace click/hover:', function() {
         .then(delay(20))
         .then(function() {
             assertEventData(1, 2, 43, 0, [1, 2], {
-                'hoverinfo': 'y',
+                hoverinfo: 'y',
                 'hoverlabel.font.color': 'cyan',
                 'colorbar.tickvals': undefined,
                 'colorbar.ticktext': undefined
@@ -1267,6 +1267,81 @@ describe('Test gl3d trace click/hover:', function() {
                 .then(done, done.fail);
             });
         });
+    });
+
+    it('@gl should emit correct event data on unhover', function(done) {
+        var _mock = Lib.extendDeep({}, mock2);
+        var x = 655;
+        var y = 221;
+
+        function _hover() {
+            mouseEvent('mouseover', x, y);
+        }
+
+        function _unhover() {
+            return new Promise(function(resolve) {
+                var x0 = x;
+                var y0 = y;
+                var initialElement = document.elementFromPoint(x0, y0);
+                var canceler = setInterval(function() {
+                    x0 -= 2;
+                    y0 -= 2;
+                    mouseEvent('mouseover', x0, y0);
+
+                    var nowElement = document.elementFromPoint(x0, y0);
+                    if(nowElement !== initialElement) {
+                        mouseEvent('mouseout', x0, y0, {element: initialElement});
+                    }
+                }, 10);
+
+                gd.on('plotly_unhover', function(eventData) {
+                    clearInterval(canceler);
+                    resolve(eventData);
+                });
+
+                setTimeout(function() {
+                    clearInterval(canceler);
+                    resolve(null);
+                }, 350);
+            });
+        }
+
+        Plotly.newPlot(gd, _mock)
+        .then(delay(20))
+        .then(function() {
+            gd.on('plotly_hover', function(eventData) {
+                ptData = eventData.points[0];
+            });
+            gd.on('plotly_unhover', function(eventData) {
+                if(eventData) {
+                    ptData = eventData.points[0];
+                } else {
+                    ptData = {};
+                }
+            });
+        })
+        .then(delay(20))
+        .then(_hover)
+        .then(delay(20))
+        .then(function() {
+            assertEventData(100.75, -102.63, -102.63, 0, 0, {
+                'marker.symbol': 'circle',
+                'marker.size': 10,
+                'marker.color': 'blue',
+                'marker.line.color': 'black'
+            });
+        })
+        .then(_unhover)
+        .then(delay(20))
+        .then(function() {
+            assertEventData(100.75, -102.63, -102.63, 0, 0, {
+                'marker.symbol': 'circle',
+                'marker.size': 10,
+                'marker.color': 'blue',
+                'marker.line.color': 'black'
+            });
+        })
+        .then(done, done.fail);
     });
 });
 

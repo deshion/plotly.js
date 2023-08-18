@@ -105,6 +105,7 @@ function createFills(gd, traceJoin, plotinfo) {
 }
 
 function plotOne(gd, idx, plotinfo, cdscatter, cdscatterAll, element, transitionOpts) {
+    var isStatic = gd._context.staticPlot;
     var i;
 
     // Since this has been reorganized and we're executing this on individual traces,
@@ -209,9 +210,11 @@ function plotOne(gd, idx, plotinfo, cdscatter, cdscatterAll, element, transition
         segments = linePoints(cdscatter, {
             xaxis: xa,
             yaxis: ya,
+            trace: trace,
             connectGaps: trace.connectgaps,
             baseTolerance: Math.max(line.width || 1, 3) / 4,
             shape: line.shape,
+            backoff: line.backoff,
             simplify: line.simplify,
             fill: trace.fill
         });
@@ -246,7 +249,7 @@ function plotOne(gd, idx, plotinfo, cdscatter, cdscatterAll, element, transition
                     revpath = thisrevpath + 'Z' + revpath;
                 }
 
-                if(subTypes.hasLines(trace) && pts.length > 1) {
+                if(subTypes.hasLines(trace)) {
                     var el = d3.select(this);
 
                     // This makes the coloring work correctly:
@@ -277,7 +280,7 @@ function plotOne(gd, idx, plotinfo, cdscatter, cdscatterAll, element, transition
 
     lineJoin.enter().append('path')
         .classed('js-line', true)
-        .style('vector-effect', 'non-scaling-stroke')
+        .style('vector-effect', isStatic ? 'none' : 'non-scaling-stroke')
         .call(Drawing.lineGroupStyle)
         .each(makeUpdate(true));
 
@@ -304,11 +307,11 @@ function plotOne(gd, idx, plotinfo, cdscatter, cdscatterAll, element, transition
                     // the points on the axes are the first two points. Otherwise
                     // animations get a little crazy if the number of points changes.
                     transition(ownFillEl3).attr('d', 'M' + pt1 + 'L' + pt0 + 'L' + fullpath.substr(1))
-                        .call(Drawing.singleFillStyle);
+                        .call(Drawing.singleFillStyle, gd);
                 } else {
                     // fill to self: just join the path to itself
                     transition(ownFillEl3).attr('d', fullpath + 'Z')
-                        .call(Drawing.singleFillStyle);
+                        .call(Drawing.singleFillStyle, gd);
                 }
             }
         } else if(tonext) {
@@ -320,7 +323,7 @@ function plotOne(gd, idx, plotinfo, cdscatter, cdscatterAll, element, transition
                     // This makes strange results if one path is *not* entirely
                     // inside the other, but then that is a strange usage.
                     transition(tonext).attr('d', fullpath + 'Z' + prevRevpath + 'Z')
-                        .call(Drawing.singleFillStyle);
+                        .call(Drawing.singleFillStyle, gd);
                 } else {
                     // tonextx/y: for now just connect endpoints with lines. This is
                     // the correct behavior if the endpoints are at the same value of
@@ -328,7 +331,7 @@ function plotOne(gd, idx, plotinfo, cdscatter, cdscatterAll, element, transition
                     // things depending on whether the new endpoint projects onto the
                     // existing curve or off the end of it
                     transition(tonext).attr('d', fullpath + 'L' + prevRevpath.substr(1) + 'Z')
-                        .call(Drawing.singleFillStyle);
+                        .call(Drawing.singleFillStyle, gd);
                 }
                 trace._polygons = trace._polygons.concat(prevPolygons);
             } else {

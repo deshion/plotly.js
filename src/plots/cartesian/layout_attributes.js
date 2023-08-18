@@ -12,6 +12,176 @@ var constants = require('./constants');
 var HOUR = constants.HOUR_PATTERN;
 var DAY_OF_WEEK = constants.WEEKDAY_PATTERN;
 
+var minorTickmode = {
+    valType: 'enumerated',
+    values: ['auto', 'linear', 'array'],
+    editType: 'ticks',
+    impliedEdits: {tick0: undefined, dtick: undefined},
+    description: [
+        'Sets the tick mode for this axis.',
+        'If *auto*, the number of ticks is set via `nticks`.',
+        'If *linear*, the placement of the ticks is determined by',
+        'a starting position `tick0` and a tick step `dtick`',
+        '(*linear* is the default value if `tick0` and `dtick` are provided).',
+        'If *array*, the placement of the ticks is set via `tickvals`',
+        'and the tick text is `ticktext`.',
+        '(*array* is the default value if `tickvals` is provided).'
+    ].join(' ')
+};
+
+var tickmode = extendFlat({}, minorTickmode, {
+    values: minorTickmode.values.slice().concat(['sync']),
+    description: [
+        minorTickmode.description,
+        'If *sync*, the number of ticks will sync with the overlayed axis',
+        'set by `overlaying` property.'
+    ].join(' ')
+});
+
+function makeNticks(minor) {
+    return {
+        valType: 'integer',
+        min: 0,
+        dflt: minor ? 5 : 0,
+        editType: 'ticks',
+        description: [
+            'Specifies the maximum number of ticks for the particular axis.',
+            'The actual number of ticks will be chosen automatically to be',
+            'less than or equal to `nticks`.',
+            'Has an effect only if `tickmode` is set to *auto*.'
+        ].join(' ')
+    };
+}
+
+var tick0 = {
+    valType: 'any',
+    editType: 'ticks',
+    impliedEdits: {tickmode: 'linear'},
+    description: [
+        'Sets the placement of the first tick on this axis.',
+        'Use with `dtick`.',
+        'If the axis `type` is *log*, then you must take the log of your starting tick',
+        '(e.g. to set the starting tick to 100, set the `tick0` to 2)',
+        'except when `dtick`=*L<f>* (see `dtick` for more info).',
+        'If the axis `type` is *date*, it should be a date string, like date data.',
+        'If the axis `type` is *category*, it should be a number, using the scale where',
+        'each category is assigned a serial number from zero in the order it appears.'
+    ].join(' ')
+};
+
+var dtick = {
+    valType: 'any',
+    editType: 'ticks',
+    impliedEdits: {tickmode: 'linear'},
+    description: [
+        'Sets the step in-between ticks on this axis. Use with `tick0`.',
+        'Must be a positive number, or special strings available to *log* and *date* axes.',
+        'If the axis `type` is *log*, then ticks are set every 10^(n*dtick) where n',
+        'is the tick number. For example,',
+        'to set a tick mark at 1, 10, 100, 1000, ... set dtick to 1.',
+        'To set tick marks at 1, 100, 10000, ... set dtick to 2.',
+        'To set tick marks at 1, 5, 25, 125, 625, 3125, ... set dtick to log_10(5), or 0.69897000433.',
+        '*log* has several special values; *L<f>*, where `f` is a positive number,',
+        'gives ticks linearly spaced in value (but not position).',
+        'For example `tick0` = 0.1, `dtick` = *L0.5* will put ticks at 0.1, 0.6, 1.1, 1.6 etc.',
+        'To show powers of 10 plus small digits between, use *D1* (all digits) or *D2* (only 2 and 5).',
+        '`tick0` is ignored for *D1* and *D2*.',
+        'If the axis `type` is *date*, then you must convert the time to milliseconds.',
+        'For example, to set the interval between ticks to one day,',
+        'set `dtick` to 86400000.0.',
+        '*date* also has special values *M<n>* gives ticks spaced by a number of months.',
+        '`n` must be a positive integer.',
+        'To set ticks on the 15th of every third month, set `tick0` to *2000-01-15* and `dtick` to *M3*.',
+        'To set ticks every 4 years, set `dtick` to *M48*'
+    ].join(' ')
+};
+
+var tickvals = {
+    valType: 'data_array',
+    editType: 'ticks',
+    description: [
+        'Sets the values at which ticks on this axis appear.',
+        'Only has an effect if `tickmode` is set to *array*.',
+        'Used with `ticktext`.'
+    ].join(' ')
+};
+
+var ticks = {
+    valType: 'enumerated',
+    values: ['outside', 'inside', ''],
+    editType: 'ticks',
+    description: [
+        'Determines whether ticks are drawn or not.',
+        'If **, this axis\' ticks are not drawn.',
+        'If *outside* (*inside*), this axis\' are drawn outside (inside)',
+        'the axis lines.'
+    ].join(' ')
+};
+
+function makeTicklen(minor) {
+    var obj = {
+        valType: 'number',
+        min: 0,
+        editType: 'ticks',
+        description: 'Sets the tick length (in px).'
+    };
+
+    if(!minor) obj.dflt = 5;
+
+    return obj;
+}
+
+function makeTickwidth(minor) {
+    var obj = {
+        valType: 'number',
+        min: 0,
+        editType: 'ticks',
+        description: 'Sets the tick width (in px).'
+    };
+
+    if(!minor) obj.dflt = 1;
+
+    return obj;
+}
+
+var tickcolor = {
+    valType: 'color',
+    dflt: colorAttrs.defaultLine,
+    editType: 'ticks',
+    description: 'Sets the tick color.'
+};
+
+var gridcolor = {
+    valType: 'color',
+    dflt: colorAttrs.lightLine,
+    editType: 'ticks',
+    description: 'Sets the color of the grid lines.'
+};
+
+function makeGridwidth(minor) {
+    var obj = {
+        valType: 'number',
+        min: 0,
+        editType: 'ticks',
+        description: 'Sets the width (in px) of the grid lines.'
+    };
+
+    if(!minor) obj.dflt = 1;
+
+    return obj;
+}
+
+var griddash = extendFlat({}, dash, {editType: 'ticks'});
+
+var showgrid = {
+    valType: 'boolean',
+    editType: 'ticks',
+    description: [
+        'Determines whether or not grid lines are drawn.',
+        'If *true*, the grid lines are drawn at every tick mark.'
+    ].join(' ')
+};
+
 module.exports = {
     visible: {
         valType: 'boolean',
@@ -135,7 +305,7 @@ module.exports = {
             {valType: 'any', editType: 'axrange', impliedEdits: {'^autorange': false}, anim: true}
         ],
         editType: 'axrange',
-        impliedEdits: {'autorange': false},
+        impliedEdits: {autorange: false},
         anim: true,
         description: [
             'Sets the range of this axis.',
@@ -343,84 +513,25 @@ module.exports = {
     }),
 
     // ticks
-    tickmode: {
-        valType: 'enumerated',
-        values: ['auto', 'linear', 'array'],
-        editType: 'ticks',
-        impliedEdits: {tick0: undefined, dtick: undefined},
-        description: [
-            'Sets the tick mode for this axis.',
-            'If *auto*, the number of ticks is set via `nticks`.',
-            'If *linear*, the placement of the ticks is determined by',
-            'a starting position `tick0` and a tick step `dtick`',
-            '(*linear* is the default value if `tick0` and `dtick` are provided).',
-            'If *array*, the placement of the ticks is set via `tickvals`',
-            'and the tick text is `ticktext`.',
-            '(*array* is the default value if `tickvals` is provided).'
-        ].join(' ')
-    },
-    nticks: {
+    tickmode: tickmode,
+    nticks: makeNticks(),
+    tick0: tick0,
+    dtick: dtick,
+    ticklabelstep: {
         valType: 'integer',
-        min: 0,
-        dflt: 0,
+        min: 1,
+        dflt: 1,
         editType: 'ticks',
         description: [
-            'Specifies the maximum number of ticks for the particular axis.',
-            'The actual number of ticks will be chosen automatically to be',
-            'less than or equal to `nticks`.',
-            'Has an effect only if `tickmode` is set to *auto*.'
+            'Sets the spacing between tick labels as compared to the spacing between ticks.',
+            'A value of 1 (default) means each tick gets a label.',
+            'A value of 2 means shows every 2nd label.',
+            'A larger value n means only every nth tick is labeled.',
+            '`tick0` determines which labels are shown.',
+            'Not implemented for axes with `type` *log* or *multicategory*, or when `tickmode` is *array*.'
         ].join(' ')
     },
-    tick0: {
-        valType: 'any',
-        editType: 'ticks',
-        impliedEdits: {tickmode: 'linear'},
-        description: [
-            'Sets the placement of the first tick on this axis.',
-            'Use with `dtick`.',
-            'If the axis `type` is *log*, then you must take the log of your starting tick',
-            '(e.g. to set the starting tick to 100, set the `tick0` to 2)',
-            'except when `dtick`=*L<f>* (see `dtick` for more info).',
-            'If the axis `type` is *date*, it should be a date string, like date data.',
-            'If the axis `type` is *category*, it should be a number, using the scale where',
-            'each category is assigned a serial number from zero in the order it appears.'
-        ].join(' ')
-    },
-    dtick: {
-        valType: 'any',
-        editType: 'ticks',
-        impliedEdits: {tickmode: 'linear'},
-        description: [
-            'Sets the step in-between ticks on this axis. Use with `tick0`.',
-            'Must be a positive number, or special strings available to *log* and *date* axes.',
-            'If the axis `type` is *log*, then ticks are set every 10^(n*dtick) where n',
-            'is the tick number. For example,',
-            'to set a tick mark at 1, 10, 100, 1000, ... set dtick to 1.',
-            'To set tick marks at 1, 100, 10000, ... set dtick to 2.',
-            'To set tick marks at 1, 5, 25, 125, 625, 3125, ... set dtick to log_10(5), or 0.69897000433.',
-            '*log* has several special values; *L<f>*, where `f` is a positive number,',
-            'gives ticks linearly spaced in value (but not position).',
-            'For example `tick0` = 0.1, `dtick` = *L0.5* will put ticks at 0.1, 0.6, 1.1, 1.6 etc.',
-            'To show powers of 10 plus small digits between, use *D1* (all digits) or *D2* (only 2 and 5).',
-            '`tick0` is ignored for *D1* and *D2*.',
-            'If the axis `type` is *date*, then you must convert the time to milliseconds.',
-            'For example, to set the interval between ticks to one day,',
-            'set `dtick` to 86400000.0.',
-            '*date* also has special values *M<n>* gives ticks spaced by a number of months.',
-            '`n` must be a positive integer.',
-            'To set ticks on the 15th of every third month, set `tick0` to *2000-01-15* and `dtick` to *M3*.',
-            'To set ticks every 4 years, set `dtick` to *M48*'
-        ].join(' ')
-    },
-    tickvals: {
-        valType: 'data_array',
-        editType: 'ticks',
-        description: [
-            'Sets the values at which ticks on this axis appear.',
-            'Only has an effect if `tickmode` is set to *array*.',
-            'Used with `ticktext`.'
-        ].join(' ')
-    },
+    tickvals: tickvals,
     ticktext: {
         valType: 'data_array',
         editType: 'ticks',
@@ -430,17 +541,7 @@ module.exports = {
             'Used with `tickvals`.'
         ].join(' ')
     },
-    ticks: {
-        valType: 'enumerated',
-        values: ['outside', 'inside', ''],
-        editType: 'ticks',
-        description: [
-            'Determines whether ticks are drawn or not.',
-            'If **, this axis\' ticks are not drawn.',
-            'If *outside* (*inside*), this axis\' are drawn outside (inside)',
-            'the axis lines.'
-        ].join(' ')
-    },
+    ticks: ticks,
     tickson: {
         valType: 'enumerated',
         values: ['labels', 'boundaries'],
@@ -523,34 +624,34 @@ module.exports = {
             'on all shared-axes subplots.'
         ].join(' ')
     },
-    ticklen: {
-        valType: 'number',
-        min: 0,
-        dflt: 5,
-        editType: 'ticks',
-        description: 'Sets the tick length (in px).'
-    },
-    tickwidth: {
-        valType: 'number',
-        min: 0,
-        dflt: 1,
-        editType: 'ticks',
-        description: 'Sets the tick width (in px).'
-    },
-    tickcolor: {
-        valType: 'color',
-        dflt: colorAttrs.defaultLine,
-        editType: 'ticks',
-        description: 'Sets the tick color.'
-    },
+    ticklen: makeTicklen(),
+    tickwidth: makeTickwidth(),
+    tickcolor: tickcolor,
     showticklabels: {
         valType: 'boolean',
         dflt: true,
         editType: 'ticks',
         description: 'Determines whether or not the tick labels are drawn.'
     },
+    labelalias: {
+        valType: 'any',
+        dflt: false,
+        editType: 'ticks',
+        description: [
+            'Replacement text for specific tick or hover labels.',
+            'For example using {US: \'USA\', CA: \'Canada\'} changes US to USA',
+            'and CA to Canada. The labels we would have shown must match',
+            'the keys exactly, after adding any tickprefix or ticksuffix.',
+            'For negative numbers the minus sign symbol used (U+2212) is wider than the regular ascii dash.',
+            'That means you need to use −1 instead of -1.',
+            'labelalias can be used with any axis type, and both keys (if needed)',
+            'and values (if desired) can include html-like tags or MathJax.'
+        ].join(' ')
+    },
     automargin: {
-        valType: 'boolean',
+        valType: 'flaglist',
+        flags: ['height', 'width', 'left', 'right', 'top', 'bottom'],
+        extras: [true, false],
         dflt: false,
         editType: 'ticks',
         description: [
@@ -762,27 +863,11 @@ module.exports = {
         editType: 'ticks+layoutstyle',
         description: 'Sets the width (in px) of the axis line.'
     },
-    showgrid: {
-        valType: 'boolean',
-        editType: 'ticks',
-        description: [
-            'Determines whether or not grid lines are drawn.',
-            'If *true*, the grid lines are drawn at every tick mark.'
-        ].join(' ')
-    },
-    gridcolor: {
-        valType: 'color',
-        dflt: colorAttrs.lightLine,
-        editType: 'ticks',
-        description: 'Sets the color of the grid lines.'
-    },
-    gridwidth: {
-        valType: 'number',
-        min: 0,
-        dflt: 1,
-        editType: 'ticks',
-        description: 'Sets the width (in px) of the grid lines.'
-    },
+    showgrid: showgrid,
+    gridcolor: gridcolor,
+    gridwidth: makeGridwidth(),
+    griddash: griddash,
+
     zeroline: {
         valType: 'boolean',
         editType: 'ticks',
@@ -884,6 +969,26 @@ module.exports = {
             'axis will be visible.'
         ].join(' ')
     },
+
+    minor: {
+        tickmode: minorTickmode,
+        nticks: makeNticks('minor'),
+        tick0: tick0,
+        dtick: dtick,
+        tickvals: tickvals,
+        ticks: ticks,
+        ticklen: makeTicklen('minor'),
+        tickwidth: makeTickwidth('minor'),
+        tickcolor: tickcolor,
+
+        gridcolor: gridcolor,
+        gridwidth: makeGridwidth('minor'),
+        griddash: griddash,
+        showgrid: showgrid,
+
+        editType: 'ticks'
+    },
+
     layer: {
         valType: 'enumerated',
         values: ['above traces', 'below traces'],
@@ -919,6 +1024,30 @@ module.exports = {
         description: [
             'Sets the position of this axis in the plotting space',
             '(in normalized coordinates).',
+            'Only has an effect if `anchor` is set to *free*.'
+        ].join(' ')
+    },
+    autoshift: {
+        valType: 'boolean',
+        dflt: false,
+        editType: 'plot',
+        description: [
+            'Automatically reposition the axis to avoid',
+            'overlap with other axes with the same `overlaying` value.',
+            'This repositioning will account for any `shift` amount applied to other',
+            'axes on the same side with `autoshift` is set to true.',
+            'Only has an effect if `anchor` is set to *free*.',
+        ].join(' ')
+    },
+    shift: {
+        valType: 'number',
+        editType: 'plot',
+        description: [
+            'Moves the axis a given number of pixels from where it would have been otherwise.',
+            'Accepts both positive and negative values, which will shift the axis either right',
+            'or left, respectively.',
+            'If `autoshift` is set to true, then this defaults to a padding of -3 if `side` is set to *left*.',
+            'and defaults to +3 if `side` is set to *right*. Defaults to 0 if `autoshift` is set to false.',
             'Only has an effect if `anchor` is set to *free*.'
         ].join(' ')
     },

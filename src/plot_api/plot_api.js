@@ -19,7 +19,7 @@ var Drawing = require('../components/drawing');
 var Color = require('../components/color');
 var initInteractions = require('../plots/cartesian/graph_interact').initInteractions;
 var xmlnsNamespaces = require('../constants/xmlns_namespaces');
-var clearSelect = require('../plots/cartesian/select').clearSelect;
+var clearOutline = require('../components/selections').clearOutline;
 
 var dfltConfig = require('./plot_config').dfltConfig;
 var manageArrays = require('./manage_arrays');
@@ -277,6 +277,7 @@ function _doPlot(gd, data, layout, config) {
 
         subroutines.drawMarginPushers(gd);
         Axes.allowAutoMargin(gd);
+        if(gd._fullLayout.title.text && gd._fullLayout.title.automargin) Plots.allowAutoMargin(gd, 'title.automargin');
 
         // TODO can this be moved elsewhere?
         if(fullLayout._has('pie')) {
@@ -369,6 +370,7 @@ function _doPlot(gd, data, layout, config) {
         Plots.addLinks,
         Plots.rehover,
         Plots.redrag,
+        Plots.reselect,
         // TODO: doAutoMargin is only needed here for axis automargin, which
         // happens outside of marginPushers where all the other automargins are
         // calculated. Would be much better to separate margin calculations from
@@ -1299,7 +1301,11 @@ function restyle(gd, astr, val, _traces) {
         seq.push(emitAfterPlot);
     }
 
-    seq.push(Plots.rehover, Plots.redrag);
+    seq.push(
+        Plots.rehover,
+        Plots.redrag,
+        Plots.reselect
+    );
 
     Queue.add(gd,
         restyle, [gd, specs.undoit, specs.traces],
@@ -1719,7 +1725,7 @@ function cleanDeprecatedAttributeKeys(aobj) {
         if((key === 'title' || oldAxisTitleRegex.test(key) || colorbarRegex.test(key)) &&
           (typeof value === 'string' || typeof value === 'number')) {
             replace(key, key.replace('title', 'title.text'));
-        } else if(key.indexOf('titlefont') > -1) {
+        } else if(key.indexOf('titlefont') > -1 && key.indexOf('grouptitlefont') === -1) {
             replace(key, key.replace('titlefont', 'title.font'));
         } else if(key.indexOf('titleposition') > -1) {
             replace(key, key.replace('titleposition', 'title.position'));
@@ -1801,7 +1807,11 @@ function relayout(gd, astr, val) {
         seq.push(emitAfterPlot);
     }
 
-    seq.push(Plots.rehover, Plots.redrag);
+    seq.push(
+        Plots.rehover,
+        Plots.redrag,
+        Plots.reselect
+    );
 
     Queue.add(gd,
         relayout, [gd, specs.undoit],
@@ -1879,8 +1889,6 @@ function addAxRangeSequence(seq, rangesAltered) {
                         }
                     }
                 }
-
-                if(ax.automargin) skipTitle = false;
             }
 
             return Axes.draw(gd, axIds, {skipTitle: skipTitle});
@@ -1890,7 +1898,7 @@ function addAxRangeSequence(seq, rangesAltered) {
         };
 
     seq.push(
-        clearSelect,
+        clearOutline,
         subroutines.doAutoRangeAndConstraints,
         drawAxes,
         subroutines.drawData,
@@ -2171,7 +2179,9 @@ function _relayout(gd, aobj) {
             if(parentFull.autorange) flags.calc = true;
             else flags.plot = true;
         } else {
-            if((fullLayout._has('scatter-like') && fullLayout._has('regl')) &&
+            if(ai === 'dragmode' && ((vi === false && vOld !== false) || (vi !== false && vOld === false))) {
+                flags.plot = true;
+            } else if((fullLayout._has('scatter-like') && fullLayout._has('regl')) &&
                 (ai === 'dragmode' &&
                 (vi === 'lasso' || vi === 'select') &&
                 !(vOld === 'lasso' || vOld === 'select'))
@@ -2217,6 +2227,15 @@ function _relayout(gd, aobj) {
     // TODO: do we really need special aobj.height/width handling here?
     // couldn't editType do this?
     if(updateAutosize(gd) || aobj.height || aobj.width) flags.plot = true;
+
+    // update shape legends
+    var shapes = fullLayout.shapes;
+    for(i = 0; i < shapes.length; i++) {
+        if(shapes[i].showlegend) {
+            flags.calc = true;
+            break;
+        }
+    }
 
     if(flags.plot || flags.calc) {
         flags.layoutReplot = true;
@@ -2312,7 +2331,11 @@ function update(gd, traceUpdate, layoutUpdate, _traces) {
         seq.push(emitAfterPlot);
     }
 
-    seq.push(Plots.rehover, Plots.redrag);
+    seq.push(
+        Plots.rehover,
+        Plots.redrag,
+        Plots.reselect
+    );
 
     Queue.add(gd,
         update, [gd, restyleSpecs.undoit, relayoutSpecs.undoit, restyleSpecs.traces],
@@ -2396,7 +2419,8 @@ function findUIPattern(key, patternSpecs) {
         var spec = patternSpecs[i];
         var match = key.match(spec.pattern);
         if(match) {
-            return {head: match[1], attr: spec.attr};
+            var head = match[1] || '';
+            return {head: head, tail: key.substr(head.length + 1), attr: spec.attr};
         }
     }
 }
@@ -2448,26 +2472,54 @@ function valsMatch(v1, v2) {
 
 function applyUIRevisions(data, layout, oldFullData, oldFullLayout) {
     var layoutPreGUI = oldFullLayout._preGUI;
-    var key, revAttr, oldRev, newRev, match, preGUIVal, newNP, newVal;
+    var key, revAttr, oldRev, newRev, match, preGUIVal, newNP, newVal, head, tail;
     var bothInheritAutorange = [];
+    var newAutorangeIn = {};
     var newRangeAccepted = {};
     for(key in layoutPreGUI) {
         match = findUIPattern(key, layoutUIControlPatterns);
         if(match) {
-            revAttr = match.attr || (match.head + '.uirevision');
+            head = match.head;
+            tail = match.tail;
+            revAttr = match.attr || (head + '.uirevision');
             oldRev = nestedProperty(oldFullLayout, revAttr).get();
             newRev = oldRev && getNewRev(revAttr, layout);
+
             if(newRev && (newRev === oldRev)) {
                 preGUIVal = layoutPreGUI[key];
                 if(preGUIVal === null) preGUIVal = undefined;
                 newNP = nestedProperty(layout, key);
                 newVal = newNP.get();
+
                 if(valsMatch(newVal, preGUIVal)) {
-                    if(newVal === undefined && key.substr(key.length - 9) === 'autorange') {
-                        bothInheritAutorange.push(key.substr(0, key.length - 10));
+                    if(newVal === undefined && tail === 'autorange') {
+                        bothInheritAutorange.push(head);
                     }
                     newNP.set(undefinedToNull(nestedProperty(oldFullLayout, key).get()));
                     continue;
+                } else if(tail === 'autorange' || tail.substr(0, 6) === 'range[') {
+                    // Special case for (auto)range since we push it back into the layout
+                    // so all null should be treated equivalently to autorange: true with any range
+                    var pre0 = layoutPreGUI[head + '.range[0]'];
+                    var pre1 = layoutPreGUI[head + '.range[1]'];
+                    var preAuto = layoutPreGUI[head + '.autorange'];
+                    if(preAuto || (preAuto === null && pre0 === null && pre1 === null)) {
+                        // Only read the input layout once and stash the result,
+                        // so we get it before we start modifying it
+                        if(!(head in newAutorangeIn)) {
+                            var newContainer = nestedProperty(layout, head).get();
+                            newAutorangeIn[head] = newContainer && (
+                                newContainer.autorange ||
+                                (newContainer.autorange !== false && (
+                                    !newContainer.range || newContainer.range.length !== 2)
+                                )
+                            );
+                        }
+                        if(newAutorangeIn[head]) {
+                            newNP.set(undefinedToNull(nestedProperty(oldFullLayout, key).get()));
+                            continue;
+                        }
+                    }
                 }
             }
         } else {
@@ -2478,12 +2530,12 @@ function applyUIRevisions(data, layout, oldFullData, oldFullLayout) {
         // so remove it from _preGUI for next time.
         delete layoutPreGUI[key];
 
-        if(key.substr(key.length - 8, 6) === 'range[') {
-            newRangeAccepted[key.substr(0, key.length - 9)] = 1;
+        if(match && match.tail.substr(0, 6) === 'range[') {
+            newRangeAccepted[match.head] = 1;
         }
     }
 
-    // Special logic for `autorange`, since it interacts with `range`:
+    // More special logic for `autorange`, since it interacts with `range`:
     // If the new figure's matching `range` was kept, and `autorange`
     // wasn't supplied explicitly in either the original or the new figure,
     // we shouldn't alter that - but we may just have done that, so fix it.
@@ -2719,7 +2771,11 @@ function react(gd, data, layout, config) {
             seq.push(emitAfterPlot);
         }
 
-        seq.push(Plots.rehover, Plots.redrag);
+        seq.push(
+            Plots.rehover,
+            Plots.redrag,
+            Plots.reselect
+        );
 
         plotDone = Lib.syncOrAsync(seq, gd);
         if(!plotDone || !plotDone.then) plotDone = Promise.resolve(gd);
@@ -3729,6 +3785,9 @@ function makePlotFramework(gd) {
     // single polar layer for the whole plot
     fullLayout._polarlayer = fullLayout._paper.append('g').classed('polarlayer', true);
 
+    // single smith layer for the whole plot
+    fullLayout._smithlayer = fullLayout._paper.append('g').classed('smithlayer', true);
+
     // single ternary layer for the whole plot
     fullLayout._ternarylayer = fullLayout._paper.append('g').classed('ternarylayer', true);
 
@@ -3767,6 +3826,7 @@ function makePlotFramework(gd) {
     fullLayout._shapeUpperLayer = layerAbove.append('g')
         .classed('shapelayer', true);
 
+    fullLayout._selectionLayer = fullLayout._toppaper.append('g').classed('selectionlayer', true);
     fullLayout._infolayer = fullLayout._toppaper.append('g').classed('infolayer', true);
     fullLayout._menulayer = fullLayout._toppaper.append('g').classed('menulayer', true);
     fullLayout._zoomlayer = fullLayout._toppaper.append('g').classed('zoomlayer', true);

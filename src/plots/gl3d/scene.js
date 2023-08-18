@@ -1,6 +1,6 @@
 'use strict';
 
-var glPlot3d = require('gl-plot3d');
+var glPlot3d = require('../../../stackgl_modules').gl_plot3d;
 var createCamera = glPlot3d.createCamera;
 var createPlot = glPlot3d.createScene;
 
@@ -23,6 +23,8 @@ var createSpikeOptions = require('./layout/spikes');
 var computeTickMarks = require('./layout/tick_marks');
 
 var STATIC_CANVAS, STATIC_CONTEXT;
+
+var tabletmode = false;
 
 function Scene(options, fullLayout) {
     // create sub container for plot
@@ -241,6 +243,10 @@ proto.initializeGLPlot = function() {
             relayoutCallback(scene);
         });
 
+        scene.glplot.canvas.addEventListener('touchstart', function() {
+            tabletmode = true;
+        });
+
         scene.glplot.canvas.addEventListener('wheel', function(e) {
             if(gd._context._scrollZoom.gl3d) {
                 if(scene.camera._ortho) {
@@ -331,8 +337,6 @@ proto.render = function() {
 
         return Axes.hoverLabelText(ax, val, hoverformat);
     }
-
-    var oldEventData;
 
     if(lastPicked !== null) {
         var pdata = project(scene.glplot.cameraParams, selection.dataCoordinate);
@@ -450,16 +454,17 @@ proto.render = function() {
             pointData.bbox = bbox[0];
         }
 
-        if(selection.buttons && selection.distance < 5) {
+        if(selection.distance < 5 && (selection.buttons || tabletmode)) {
             gd.emit('plotly_click', eventData);
         } else {
             gd.emit('plotly_hover', eventData);
         }
 
-        oldEventData = eventData;
+        this.oldEventData = eventData;
     } else {
         Fx.loneUnhover(svgContainer);
-        gd.emit('plotly_unhover', oldEventData);
+        if(this.oldEventData) gd.emit('plotly_unhover', this.oldEventData);
+        this.oldEventData = undefined;
     }
 
     scene.drawAnnotations(scene);
@@ -1085,7 +1090,7 @@ proto.toImage = function(format) {
     var canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
-    var context = canvas.getContext('2d');
+    var context = canvas.getContext('2d', {willReadFrequently: true});
     var imageData = context.createImageData(w, h);
     imageData.data.set(pixels);
     context.putImageData(imageData, 0, 0);
